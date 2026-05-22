@@ -159,9 +159,27 @@ References validated: `REF-01`, `REF-02`, `REF-03`, `REF-05`, `REF-06`, and `REF
 **Files Created/Deleted/Modified:**
 - none required unless a minimal QA artifact is needed
 
-**Status:** ⏳ Pending
+**Status:** ✅ Complete
 
-**Results:** Pending.
+**Results:** QA re-claimed `atct-91t` with `bd update atct-91t --status in_progress --json` and independently re-verified the slice against the repo-local headless Godot testbed on top of coder commit `af4df64ddf8942fecd7688341a0dd8ff03b4f8cc`. File-scope inspection confirmed the implementation commit touched only repo-owned source/docs/tests (`src/CameraTracking.gd`, `src/CameraTrackingFrame.gd`, `.testbed/tests/test_CameraTracking.gd`, `README.md`, and this plan) and did **not** treat `.testbed/addons/*` mirrors as owned source.
+
+Exact QA commands/results from the repo root:
+- `bd update atct-91t --status in_progress --json` ✅ claimed QA bead
+- `git show --stat --name-only --format=fuller af4df64` ✅ confirmed the landed file set for the coder slice
+- `git diff --name-only ebc60ac..af4df64 -- .testbed/addons` ✅ returned no paths, confirming no addon-mirror edits were part of the implementation commit
+- `./scripts/prepare_testbed.sh` ✅ refreshed the repo-local overlay shim inside `.testbed/addons/aerobeat-tool-camera-tracking/src`
+- `godot --headless --path .testbed --import` ✅ import completed successfully; only emitted the known non-fatal `ObjectDB instances leaked at exit` shutdown warning during this QA run
+- `godot --headless --path .testbed --script addons/gut/gut_cmdln.gd -gdir=res://tests -ginclude_subdirs -gexit` ✅ `10/10` tests passed (`83` asserts)
+
+Behavior validated by those repo-local tests:
+- successful `live_camera` startup now exposes a non-empty public frame for the vendor-proven sample facts only: `timestamp_ms`, `backend`, `source_kind`, `source_id`, and `frame_size.{x,y}`
+- successful `live_camera` change preserves the same truthful minimal frame behavior for the newly selected camera
+- richer/unproven fields remained at honest defaults in the verified public frame: `tracking_state=idle`, `confidence=0.0`, zeroed head pose/velocity/orientation, empty `landmarks`, empty `skeleton`
+- tool-owned truth remained tool-owned: `preview_transform.flip_horizontal` still comes from public config, `preview_transform.space` stayed `gameplay_normalized`, `state/detail` readiness stayed driven by the tool contract, and unsupported `video_file` change still fails honestly with `unsupported_source_kind`
+
+Addon freshness note: the coder had to refresh the installed vendor addon earlier because the hidden `.testbed` install was stale pre-`027fbeb`. In this independent QA run, the installed addon was already fresh enough, so no additional `godotenv addons install` step was required; validation truthfully notes that the stale-addon hazard is real but was already resolved before QA reran the testbed.
+
+Gaps/limits: this QA pass proves the repo-local headless contract/testbed slice only. It does not upgrade downstream gameplay readiness, landmark truth, active tracking-state semantics, replay/video support, or any broader audit claims beyond this bead.
 
 ---
 
@@ -179,9 +197,30 @@ References validated: `REF-01`, `REF-02`, `REF-03`, `REF-05`, `REF-06`, and `REF
 **Files Created/Deleted/Modified:**
 - none required unless a minimal audit artifact becomes necessary
 
-**Status:** ⏳ Pending
+**Status:** ✅ Complete
 
-**Results:** Pending.
+**Results:** Independent audit passed on coder commit `af4df64ddf8942fecd7688341a0dd8ff03b4f8cc` against the repo-local plan, the paired vendor slice (`027fbeb`), the landed diff, and fresh repo-local validation.
+
+Audit commands run from `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-tool-camera-tracking`:
+- `bd update atct-5g2 --status in_progress --json` ✅ claimed auditor bead
+- `git show --stat --name-only --format=fuller af4df64ddf8942fecd7688341a0dd8ff03b4f8cc` ✅ confirmed the implementation commit touched only repo-owned files: `src/CameraTracking.gd`, `src/CameraTrackingFrame.gd`, `.testbed/tests/test_CameraTracking.gd`, `README.md`, and this plan
+- `git diff --name-only af4df64ddf8942fecd7688341a0dd8ff03b4f8cc^ af4df64ddf8942fecd7688341a0dd8ff03b4f8cc -- .testbed/addons` ✅ returned no paths, confirming addon mirrors were not treated as owned source
+- `git diff --stat af4df64ddf8942fecd7688341a0dd8ff03b4f8cc^ af4df64ddf8942fecd7688341a0dd8ff03b4f8cc -- src/CameraTracking.gd src/CameraTrackingFrame.gd .testbed/tests/test_CameraTracking.gd README.md` ✅ showed the expected narrow tool-owned slice only
+- `./scripts/prepare_testbed.sh` ✅ refreshed the repo-local overlay shims used by the hidden testbed
+- `godot --headless --path .testbed --import` ✅ completed successfully; emitted the known non-fatal `ObjectDB instances leaked at exit` shutdown warning
+- `godot --headless --path .testbed --script addons/gut/gut_cmdln.gd -gdir=res://tests -ginclude_subdirs -gexit` ✅ `10/10` tests passed (`83` asserts)
+- `grep -RInE "env -i|AEROBEAT_CAMERA_SAMPLE_FIXTURES_JSON|raw_tracking_frame|frame_size|tracking_state" .testbed/addons/aerobeat-vendor-mediapipe-python` ✅ confirmed the installed vendor addon currently contains the post-`027fbeb` minimal-real-frame path (`AEROBEAT_CAMERA_SAMPLE_FIXTURES_JSON`, `raw_tracking_frame`, `tracking_state`, `frame_size`) and does not show the older fragile shell-level `env -i` wrapper in the searched files
+
+Audit findings:
+- Planned scope is truly complete for this repo: successful `live_camera` startup/change now surface a non-empty public frame only for the narrow vendor-proven sample facts while the rest of the public contract remains truthful and conservative.
+- Truly proven/publicly surfaced fields in this slice are: `timestamp_ms`, `backend`, `source_kind`, `source_id`, `frame_size.x`, `frame_size.y`, plus tool-owned `preview_transform.flip_horizontal` and `preview_transform.space = gameplay_normalized`.
+- Still default/provisional/non-claiming after this slice: `tracking_state` remains `idle`; `confidence` remains `0.0`; `head_position`, `head_velocity`, `head_orientation` remain zero/default; `landmarks` remains empty; `skeleton` remains empty; there is still no broader pose/body/coordinate-space gameplay truth.
+- Tool ownership stayed intact: `CameraTracking.gd` still owns lifecycle/state/detail/source coordination and composes the public frame through `CameraTrackingFrame.normalize(...)`; `CameraTrackingFrame.gd` intentionally preserves the tool-owned default shell and does not trust backend-provided `preview_transform` wholesale.
+- No addon mirrors were treated as owned source in the landed implementation commit.
+- The stale installed vendor-addon wrinkle is handled truthfully in the validation story. I did not recreate the pre-refresh failure because the hidden `.testbed` addon is already refreshed, but the current installed addon contents match the post-`027fbeb` vendor slice and the repo-local validation now passes cleanly. That makes the coder/QA story plausible and honestly bounded: the stale-addon issue was a validation-environment state problem, not part of the landed source diff.
+- Validation evidence is sufficient and truthful for the planned scope. The repo-local headless testbed proves the exact public contract boundaries this slice promised, and nothing in the current audit suggests broader downstream readiness than the plan claims.
+
+References validated in audit: `REF-02`, `REF-03`, `REF-04`, `REF-05`, `REF-06`, `REF-07`, `REF-08`, and `REF-09`. Downstream gameplay blockers remain intentionally unchanged: active tracking-state semantics, landmark payload truth, richer coordinate-space guarantees, and replay/video support are still deferred.
 
 ---
 
@@ -197,16 +236,16 @@ Execution note: this tool slice should not begin until the paired vendor slice i
 
 ## Final Results
 
-**Status:** ⚠️ Coder complete / awaiting QA + audit
+**Status:** ✅ Complete
 
-**What We Built:** The coder slice landed the first tool-owned public minimal-real-frame normalization seam. Successful `live_camera` startup/change now surface real sampled-frame metadata (`timestamp_ms`, source identity, `frame_size`) through the public `CameraTracking` frame contract while richer tracking fields remain default/empty unless a backend truly provides them.
+**What We Built:** The repo now exposes the first truthful tool-owned public minimal-real-frame path on top of the paired vendor sampled-frame slice. Successful `live_camera` startup/change surface real sampled-frame metadata (`timestamp_ms`, `backend`, `source_kind`, `source_id`, `frame_size`) through the public `CameraTracking` frame contract while richer tracking/body/head fields remain default/empty and non-claiming.
 
-**Reference Check:** The coder implementation preserves tool ownership from `REF-01` through `REF-04`, consumes the vendor truth expansion in `REF-05` and `REF-06`, and leaves the downstream blocker story in `REF-07`, `REF-08`, and `REF-09` intentionally unchanged.
+**Reference Check:** Audit confirmed the landed implementation preserves tool ownership from `REF-01` through `REF-04`, consumes the vendor truth expansion in `REF-05` and `REF-06` conservatively, and leaves the downstream blocker story in `REF-07`, `REF-08`, and `REF-09` intentionally unchanged. QA and audit both confirmed the implementation commit did not treat `.testbed/addons/*` mirrors as owned source.
 
 **Commits:**
-- Pending coder commit.
+- `af4df64ddf8942fecd7688341a0dd8ff03b4f8cc` - Normalize minimal real camera tracking frame
 
-**Lessons Learned:** The honest next public step is to normalize at the tool boundary instead of trusting backend payloads wholesale, and repo-local validation needs the installed testbed vendor addon refreshed whenever the paired vendor slice advances.
+**Lessons Learned:** The right boundary for this wave was not to trust backend payloads wholesale, but to normalize them back onto the tool-owned default shell so only proven fields become non-empty. Validation for this package also needs explicit awareness of the hidden installed vendor addon state whenever the paired vendor repo advances, because a stale addon can falsify the story even when repo-root source is correct.
 
 ---
 

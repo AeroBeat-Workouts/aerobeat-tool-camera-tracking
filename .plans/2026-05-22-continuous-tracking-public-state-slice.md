@@ -1,7 +1,7 @@
 # AeroBeat Tool Camera Tracking — Continuous Tracking Public State Slice
 
 **Date:** 2026-05-22  
-**Status:** Draft  
+**Status:** Complete  
 **Agent:** Cookie 🍪
 
 ---
@@ -180,9 +180,31 @@ Validation run in this repo:
 **Files Created/Deleted/Modified:**
 - none required unless a minimal QA artifact becomes necessary
 
-**Status:** ⏳ Pending
+**Status:** ✅ Complete
 
-**Results:** Pending.
+**Results:** Claimed `atct-cuy` with `bd update atct-cuy --status in_progress --json` and independently QA’d the slice at the highest-fidelity repo-local level available: the repo’s `.testbed` headless Godot proving surface plus commit-scope inspection.
+
+Exact commands and outcomes:
+- `bd update atct-cuy --status in_progress --json` ✅ claimed bead
+- `git status --short && echo '---' && git log --oneline -n 5` ✅ confirmed coder handoff commit `ca265c0` is present in this repo
+- `git show --stat --oneline ca265c0 --` ✅ confirmed the implementation touched only repo-root source/tests/docs/plan files
+- `./scripts/prepare_testbed.sh && godot --headless --path .testbed --import` ✅ import/proving surface prepared successfully (Godot exit `0`)
+- `godot --headless --path .testbed --script addons/gut/gut_cmdln.gd -gdir=res://tests -ginclude_subdirs -gexit` ✅ `13/13` tests passed, `119` asserts, exit `0`
+- `git diff --name-only ca265c0^ ca265c0 | grep '/addons/' || true` ✅ no `/addons` mirror paths were part of the implementation commit
+
+What this QA run proved:
+- `CameraTracking` can stay `running` while the backend continues advancing frames over time (`test_camera_tracking_refreshes_continuous_backend_updates_over_time`).
+- `get_tracking_frame()` advances to the latest normalized public frame (`timestamp_ms` reaches `1200` after successive backend advances).
+- `tracking_updated` can repeat over time when live backend facts change (`tracking_events.size() >= 3`).
+- `detail.tracking_ready = true` is now truthful for an active continuous lane even while frame truth remains per-frame.
+- An intermediate frame can still be publicly `idle` while the lane remains active (`tracking_events[1].tracking_state == idle`, no landmarks, tracker still running).
+- Preview/source/lifecycle ownership remains tool-owned through repo-root `src/CameraTracking.gd` and the preview descriptor assertions; the continuous change did not move ownership into vendor/addon mirrors.
+- Public landmark shape remains limited to `id/x/y/z/v`, while richer fields stay default/empty (`confidence == 0.0`, `head_position.z == 0.0`, `skeleton` empty).
+- Unsupported `video_file` still fails honestly in the current scope.
+
+Gaps / limits:
+- This was a strong repo-local QA pass, not a live human-camera/manual gameplay pass. The highest-fidelity validation available in this repo is the deterministic `.testbed` headless suite, and that passed cleanly.
+- This QA pass does not audit broader downstream gameplay behavior or donor parity; those remain outside QA scope for this bead.
 
 ---
 
@@ -200,9 +222,29 @@ Validation run in this repo:
 **Files Created/Deleted/Modified:**
 - none required unless a minimal audit artifact is necessary
 
-**Status:** ⏳ Pending
+**Status:** ✅ Complete
 
-**Results:** Pending.
+**Results:** Claimed `atct-5r8` with `bd update atct-5r8 --status in_progress --json` and independently audited the slice against the repo-local plan, the actual implementation commit `ca265c0`, the closed QA bead `atct-cuy`, and a fresh rerun of repo-local validation.
+
+Exact audit commands and outcomes:
+- `bd update atct-5r8 --status in_progress --json` ✅ claimed auditor bead
+- `bd show atct-2tq --json` / `bd show atct-cuy --json` / `bd show atct-5r8 --json` ✅ verified coder + QA closure reasons and dependency chain
+- `git show --stat --oneline ca265c0 --` ✅ confirmed the implementation commit scope is limited to repo-root source/tests/docs/plan files
+- `git diff --name-only ca265c0^ ca265c0 | grep '/addons/' || true` ✅ confirmed no `/addons` mirror paths were treated as owned source
+- `git diff ca265c0^ ca265c0 -- src/CameraTracking.gd src/CameraTrackingFrame.gd .testbed/tests/test_CameraTracking.gd README.md` ✅ confirmed the code changes stay within the planned ownership boundary: tool-owned lifecycle/state/preview/source/public-frame semantics only
+- `./scripts/prepare_testbed.sh && godot --headless --path .testbed --import && godot --headless --path .testbed --script addons/gut/gut_cmdln.gd -gdir=res://tests -ginclude_subdirs -gexit` ✅ passed with `13/13` tests and `119` asserts
+
+Independent audit conclusion:
+- `CameraTracking` now stays `running` while a continuous backend continues advancing facts over time; the public service no longer behaves as startup-snapshot-only for the proven live-camera path.
+- `get_tracking_frame()` now returns the latest normalized public frame over time by pulling refreshed backend state/frame facts while the service is running.
+- `tracking_updated` can repeat over time when live backend facts materially change.
+- `detail.tracking_ready = true` now truthfully means the active continuous lane is live at the tool boundary for the supported `backend = mediapipe_python` + `source.kind = live_camera` path, based on the paired green vendor runtime slice plus the tool-side refresh mapping.
+- An intermediate frame can still be publicly `idle` while the lane remains active; the new polling test proves that distinction explicitly.
+- Preview/source/lifecycle ownership remains tool-owned: the continuous change is confined to repo-root `src/CameraTracking.gd` and `src/CameraTrackingFrame.gd`, while preview composition and attached-surface semantics remain under tool control.
+- The public frame shape stayed conservative: landmarks remain `id/x/y/z/v`; richer fields still normalize to defaults/empty; public `tracking_state` remains frame-level `tracked` vs `idle` truth only.
+- Validation evidence is sufficient for the planned scope: fresh auditor rerun matched the coder and QA claims, and no contradictory diff or ownership drift was found.
+
+Audit limit to state honestly: this audit proves the planned repo-local continuous public-state slice, not broader gameplay-grade temporal correctness, replay/video behavior, or final public `reacquiring` semantics.
 
 ---
 
@@ -218,17 +260,17 @@ Execution note: this tool slice should not begin until the paired vendor slice i
 
 ## Final Results
 
-**Status:** ⚠️ Planned / ready for execution
+**Status:** ✅ Complete
 
-**What We Built:** A repo-local execution plan plus serialized coder → QA → auditor beads for the first truthful continuous public tracking slice in `aerobeat-tool-camera-tracking`.
+**What We Built:** The planned tool-side continuous public tracking slice is now implemented, QA’d, and independently audited. `CameraTracking` can keep exposing refreshed normalized live-camera frames over time while remaining the tool-owned boundary for lifecycle/state/detail/preview/source coordination.
 
-**Reference Check:** This plan keeps the ownership split strict: vendor runtime/session/inference/raw-update truth remains in the vendor repo, while this repo owns the public continuous state/detail/frame semantics that downstream consumers will actually observe.
+**Reference Check:** `REF-01`, `REF-03`, `REF-04`, `REF-05`, `REF-06`, `REF-07`, and `REF-10` are satisfied for the planned scope. The ownership split stayed strict: vendor runtime/session/inference/raw-update truth remains in the vendor repo, while this repo owns the public continuous state/detail/frame semantics downstream consumers will observe. No `/addons` mirror path was treated as owned source.
 
 **Commits:**
-- Pending.
+- `ca265c0` - Add continuous public tracking refresh slice
 
 **Lessons Learned:** The honest tool-side upgrade is not “invent richer tracking semantics.” It is “make the current public service truly continuous, keep the contract conservative, and say exactly what got stronger versus what is still provisional.”
 
 ---
 
-*Prepared on 2026-05-22*
+*Completed on 2026-05-22*

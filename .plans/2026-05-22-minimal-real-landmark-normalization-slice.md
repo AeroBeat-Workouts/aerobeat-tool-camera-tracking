@@ -206,9 +206,38 @@ Coder-slice public truth after this implementation:
 **Files Created/Deleted/Modified:**
 - none required unless a minimal QA artifact becomes necessary
 
-**Status:** ⏳ Pending
+**Status:** ✅ Complete
 
-**Results:** Pending.
+**Results:** Claimed `atct-4nm` with `bd update atct-4nm --status in_progress --json` and verified the slice at the highest-fidelity repo-local level available: the hidden `.testbed/` Godot testbed using the real installed vendor addon path plus repo-root tool source via `./scripts/prepare_testbed.sh` shims. QA first inspected the implementation surface (`src/CameraTrackingFrame.gd`, `src/CameraTracking.gd`, `src/CameraTrackingFakeBackend.gd`, `.testbed/tests/test_CameraTracking.gd`, `README.md`) and confirmed the owned implementation stays in repo-root source, not `/addons` mirrors.
+
+Exact validation command from the repo root:
+- `./scripts/prepare_testbed.sh && godot --headless --path .testbed --import && godot --headless --path .testbed --script addons/gut/gut_cmdln.gd -gdir=res://tests -ginclude_subdirs -gexit`
+
+Result:
+- ✅ passed on the first QA run (`12/12` tests, `104` asserts, exit `0`)
+
+What QA proved:
+- public sampled landmark payload now surfaces through `CameraTracking` with only the proven landmark fields `id/x/y/z/v`
+- `x` / `y` are normalized/clamped into `[0,1]`
+- tool-owned horizontal mirroring is applied when `preview.flip_horizontal = true`
+- `tracking_state = tracked` survives only when at least one valid public landmark remains after normalization; otherwise the public frame falls back to `idle`
+- richer/unproven fields (`confidence`, `head_position`, `head_velocity`, `head_orientation`, `skeleton`) remain honest defaults
+- preview/source/lifecycle ownership remains in tool-owned public composition (`CameraTracking.gd` / `CameraTrackingFrame.gd`)
+- unsupported `video_file` still fails honestly with `unsupported_source_kind`
+- commit `f5063564082db0269677b1d104fad3a9293cc334` touched only repo-root owned files plus the plan (`src/CameraTrackingFrame.gd`, `src/CameraTrackingFakeBackend.gd`, `.testbed/tests/test_CameraTracking.gd`, `README.md`, plan file); no `/addons` mirror file was treated as owned source
+- hidden installed vendor addon staleness was handled truthfully in the validation flow: QA inspected `.testbed/addons/aerobeat-vendor-mediapipe-python/src/MediaPipePythonFrameMapper.gd` and confirmed it already matched the vendor repo’s current landmark-capable mapper content, so no `godotenv addons install` refresh was necessary on this machine for the QA pass
+
+Proven non-empty/public-on-success fields in this slice:
+- top-level frame: `timestamp_ms`, `backend`, `source_kind`, `source_id`, `tracking_state`, `frame_size.{x,y}`, `preview_transform.flip_horizontal`, `preview_transform.space`, `landmarks[]`
+- landmark entries: `id`, `x`, `y`, `z`, `v`
+
+Still default/provisional after this slice:
+- `confidence = 0.0`
+- `head_position = {0,0,0}`
+- `head_velocity = {0,0,0}`
+- `head_orientation = {0,0,0,1}`
+- `skeleton = {}`
+- continuous/reacquiring/loss semantics remain deferred.
 
 ---
 
@@ -226,9 +255,38 @@ Coder-slice public truth after this implementation:
 **Files Created/Deleted/Modified:**
 - none required unless a minimal audit artifact becomes necessary
 
-**Status:** ⏳ Pending
+**Status:** ✅ Complete
 
-**Results:** Pending.
+**Results:** Independently audited commit `f5063564082db0269677b1d104fad3a9293cc334` against this repo-local plan, the landed diff, the paired coordination context, and the recorded coder/QA evidence. Re-read the owned implementation surface (`src/CameraTrackingFrame.gd`, `src/CameraTracking.gd`, `src/CameraTrackingFakeBackend.gd`, `.testbed/tests/test_CameraTracking.gd`, `README.md`), confirmed the commit touched only repo-root owned source/tests/docs plus the plan, and confirmed no `/addons` mirror was treated as owned source.
+
+Exact audit commands/results:
+- `bd update atct-gmo --status in_progress --json` ✅ claimed bead
+- `git rev-parse HEAD` → `f5063564082db0269677b1d104fad3a9293cc334`
+- `git show --stat --oneline f5063564082db0269677b1d104fad3a9293cc334` ✅ landed files were `.plans/2026-05-22-minimal-real-landmark-normalization-slice.md`, `.testbed/tests/test_CameraTracking.gd`, `README.md`, `src/CameraTrackingFakeBackend.gd`, `src/CameraTrackingFrame.gd`
+- `git diff-tree --no-commit-id --name-only -r f5063564082db0269677b1d104fad3a9293cc334` ✅ no addon-mirror file paths appeared
+- `./scripts/prepare_testbed.sh && godot --headless --path .testbed --import && godot --headless --path .testbed --script addons/gut/gut_cmdln.gd -gdir=res://tests -ginclude_subdirs -gexit` ✅ passed (`12/12` tests, `104` asserts, exit `0`)
+- `diff -u /home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python/src/MediaPipePythonFrameMapper.gd /home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-tool-camera-tracking/.testbed/addons/aerobeat-vendor-mediapipe-python/src/MediaPipePythonFrameMapper.gd` ✅ no diff, so the currently installed vendor addon on this host is not stale for this slice
+
+Audit conclusions:
+- the public sampled-frame landmark payload now surfaces through `CameraTracking` with only the proven public landmark fields `id`, `x`, `y`, `z`, and `v`
+- `x` / `y` normalization is tool-owned in `CameraTrackingFrame.gd`, clamps into `[0,1]`, and applies tool-owned horizontal mirroring on `x` when `preview.flip_horizontal = true`
+- `tracking_state` remains `tracked` only when at least one valid public landmark with an `id` survives normalization; otherwise attempted tracked frames fall back to `idle`
+- richer/unproven fields remain honest defaults: `confidence = 0.0`, `head_position = {0,0,0}`, `head_velocity = {0,0,0}`, `head_orientation = {0,0,0,1}`, and `skeleton = {}`
+- preview/source/lifecycle ownership remains tool-owned via `CameraTracking.gd`, `CameraTrackingFrame.gd`, and preview composition helpers; the tool slice did not move that ownership into the vendor repo
+- current validation evidence is sufficient and truthful for the planned scope on this host: repo-local highest-fidelity validation passes, and the currently installed vendor addon used by the hidden testbed matches the vendor repo source for the mapper seam
+
+Public fields proven by this slice:
+- top-level sampled/public frame truth: `timestamp_ms`, `backend`, `source_kind`, `source_id`, `tracking_state`, `frame_size.{x,y}`, `preview_transform.flip_horizontal`, `preview_transform.space`, `landmarks[]`
+- per-landmark truth when emitted: `id`, `x`, `y`, `z`, `v`
+
+Still default/provisional after this slice:
+- continuous tracking / streaming semantics
+- `reacquiring` / loss semantics across time
+- non-zero aggregate `confidence` meaning
+- `head_position`, `head_velocity`, `head_orientation`
+- `skeleton`
+- multi-pose guarantees
+- richer physical meaning/scale guarantees for landmark `z`
 
 ---
 
@@ -244,16 +302,16 @@ Execution note: this tool slice should not begin until the paired vendor slice i
 
 ## Final Results
 
-**Status:** ⚠️ In Progress — coder complete, QA/audit pending
+**Status:** ✅ Complete
 
-**What We Built:** The coder slice is complete for the first truthful public landmark-frame implementation in `aerobeat-tool-camera-tracking`. The repo now normalizes vendor/raw sampled landmarks into the tool-owned public frame contract and preserves honest defaults for everything this slice still does not guarantee.
+**What We Built:** The tool slice is now independently audited complete for its planned scope. `aerobeat-tool-camera-tracking` truthfully consumes the paired vendor sampled-landmark payload, normalizes it into the public `CameraTracking` frame using only the proven public landmark fields (`id/x/y/z/v`), clamps and mirrors coordinates at the tool-owned contract boundary, preserves tool ownership of preview/source/lifecycle/public composition, and leaves richer semantics at honest defaults.
 
-**Reference Check:** The implementation preserved the ownership split: the vendor repo still owns runtime/raw landmark extraction while this repo owns the public normalized frame contract, including coordinate normalization and downstream guarantee language.
+**Reference Check:** The implementation preserved the ownership split: the vendor repo still owns runtime/raw landmark extraction while this repo owns the public normalized frame contract, including coordinate normalization, public tracking-state truth at the sampled-frame boundary, and downstream guarantee language. Audit also confirmed the hidden installed vendor addon currently used by the testbed is aligned with vendor source rather than being a stale mirror.
 
 **Commits:**
-- Pending coder commit.
+- `f5063564082db0269677b1d104fad3a9293cc334` - Normalize minimal real landmark frame
 
-**Lessons Learned:** The right next tool-side move is still restraint. The useful upgrade here was not richer semantics; it was making the public landmark contract truthful, typed, and explicit while keeping the still-snapshot nature of the upstream runtime plainly visible.
+**Lessons Learned:** The right tool-side upgrade was still restraint. The win here was making the public landmark contract truthful, typed, and explicit without pretending the sample-only upstream runtime is already a continuous gameplay-ready tracking stream.
 
 ---
 

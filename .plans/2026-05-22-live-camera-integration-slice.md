@@ -186,11 +186,26 @@ Boundary notes for QA/audit: no tracked source remains under `.testbed/addons/ae
 - validation-only use of `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-tool-camera-tracking/.testbed/`
 
 **Files Created/Deleted/Modified:**
-- none required unless a minimal QA artifact becomes necessary
+- none required; used and removed one temporary untracked headless smoke script under `.testbed/` during verification
 
-**Status:** ⏳ Pending
+**Status:** ✅ Complete
 
-**Results:** Pending.
+**Results:** Claimed `atct-21l` with `bd update atct-21l --status in_progress --json` and independently re-verified the repaired slice from the repo root using the highest-fidelity repo-local proving path available.
+
+Exact QA commands/results:
+- `git ls-files .testbed/addons .testbed/.addons` → no tracked files under addon mirrors; `git status --short` only showed pre-existing untracked plan paths outside this QA slice.
+- `rm -rf .testbed/addons/aerobeat-tool-camera-tracking/src && cd .testbed && godotenv addons install && cd .. && ./scripts/prepare_testbed.sh` ✅ reinstalled testbed addons and re-created the local overlay shim package. Verified the generated `.testbed/addons/aerobeat-tool-camera-tracking/src/*.gd` files are untracked and that `.testbed/.addons/aerobeat-tool-camera-tracking` does not exist.
+- `godot --headless --path .testbed --import` ✅ import succeeded. Observed non-fatal warnings only: several vendor `.uid` files were regenerated from cache and Godot emitted `ObjectDB instances leaked at exit` on shutdown.
+- `godot --headless --path .testbed --script addons/gut/gut_cmdln.gd -gdir=res://tests -ginclude_subdirs -gexit` ✅ 9/9 tests passed.
+- Standalone smoke verification via a temporary untracked headless script under `.testbed/` that registered `mediapipe_python` through `CameraTracking.register_backend_factory(...)`, constructed `MediaPipePythonCameraTrackingBackend` + `MediaPipePythonRuntimeBridge`, and exercised the real tool → vendor runtime-probe lane with fixture cameras rooted at `user://qa-live-camera-fixture`:
+  - live-camera start returned `state=running` with detail `{backend_ready:true, preview_ready:true, source_ready:true, tracking_ready:false}`
+  - camera inventory returned two truthful `live_camera` entries (`video0`, `video2`) with vendor metadata `probe_mode=filesystem_glob`
+  - preview descriptor stayed tool-owned and truthful: `{attached:true, backend:"mediapipe_python", surface_path:"PreviewSlot", flip_horizontal:false}`
+  - normalized default frame stayed truthful and empty/default as expected for the current bootstrap/probe-only slice: `backend="mediapipe_python"`, `source_kind="live_camera"`, `source_id=<selected camera path>`, `tracking_state="idle"`, `frame_size={x:0,y:0}`, empty landmarks/skeleton
+  - changing to unsupported `source.kind = video_file` failed honestly with `state=error` and `last_error.code="unsupported_source_kind"`; the normalized frame also truthfully switched to `source_kind="video_file"` and `source_id="res://clips/demo.mp4"`
+- Ownership-boundary spot check: `grep -RIn "addons/aerobeat-vendor-mediapipe-python\|MediaPipePython" src` → no vendor preload/import references in repo-root sharable source; vendor-specific references remain in proving/tests only.
+
+QA conclusion: pass. The repaired `scripts/prepare_testbed.sh` flow is truthful and sufficient for proving, import/test coverage passes, the real vendor runtime probe lane starts through the tool-owned backend registry path, unsupported `video_file` still fails honestly, and sharable source ownership remains at repo root rather than inside `.testbed/addons` / `.testbed/.addons`. Non-blocking gap noted for audit context only: import still emits vendor `.uid` regeneration warnings plus the known `ObjectDB instances leaked at exit` warning, but neither prevented import or test success.
 
 ---
 
@@ -208,9 +223,26 @@ Boundary notes for QA/audit: no tracked source remains under `.testbed/addons/ae
 **Files Created/Deleted/Modified:**
 - none required unless a minimal audit artifact becomes necessary
 
-**Status:** ⏳ Pending
+**Status:** ✅ Complete
 
-**Results:** Pending.
+**Results:** Claimed `atct-57m` with `bd update atct-57m --status in_progress --json` and independently audited the repaired slice against the repo-local plan, commit `ebc60ac69ae58177c8cdce73ee51d49faad1fdf0`, current repo source, and QA evidence.
+
+Exact audit commands/results:
+- `git ls-files .testbed/addons/aerobeat-tool-camera-tracking .testbed/.addons/aerobeat-tool-camera-tracking` → no tracked files under either addon-mirror path for this repo, confirming the tracked shim source was removed.
+- `git show --stat --patch ebc60ac69ae58177c8cdce73ee51d49faad1fdf0 -- scripts/prepare_testbed.sh README.md .gitignore .github/workflows/gut_ci.yml ...` → confirmed the repair commit only removed the tracked `.gitignore` exemptions, added the repo-owned `scripts/prepare_testbed.sh` helper, documented the proving flow in `README.md`, and wired CI to run the helper before import/tests.
+- Read/spot-checked `scripts/prepare_testbed.sh`, `src/CameraTracking.gd`, `src/CameraTrackingBackendRegistry.gd`, `src/CameraTrackingPreview.gd`, and `src/CameraTrackingFrame.gd` → confirmed the helper only writes one-line local shims (`extends "res://src/<name>.gd"`) while the repo-root `src/` files still own backend registry/resolution, lifecycle/state transitions, preview attachment semantics, and normalized default-frame truth.
+- `grep -RIn "MediaPipePython\|aerobeat-vendor-mediapipe-python" src` → no vendor-specific preload/import coupling in repo-root sharable source.
+- `rm -rf .testbed/addons/aerobeat-tool-camera-tracking/src && cd .testbed && godotenv addons install && cd .. && ./scripts/prepare_testbed.sh` ✅ reinstall + overlay regeneration succeeded. The helper produced only local shim files under `.testbed/addons/aerobeat-tool-camera-tracking/src/`.
+- `godot --headless --path .testbed --import` ✅ succeeded; observed only non-blocking vendor `.uid` regeneration warnings plus the known `ObjectDB instances leaked at exit` warning.
+- `godot --headless --path .testbed --script addons/gut/gut_cmdln.gd -gdir=res://tests -ginclude_subdirs -gexit` ✅ 9/9 tests passed.
+- Temporary untracked smoke script `audit_live_camera_smoke.gd` under `.testbed/` registered the real vendor backend via `CameraTracking.register_backend_factory(...)` and exercised the real tool → vendor runtime-probe lane. Results:
+  - live start returned `state=running` with detail `{backend_ready:true, preview_ready:true, source_ready:true, tracking_ready:false}`
+  - camera inventory returned two truthful `live_camera` entries with `probe_mode=filesystem_glob`
+  - preview descriptor stayed tool-owned and truthful: `{attached:true, backend:"mediapipe_python", surface_path:"PreviewSlot", flip_horizontal:false}`
+  - normalized default frame stayed empty/default but truthful for the current bootstrap/probe-only slice: `backend="mediapipe_python"`, `source_kind="live_camera"`, `source_id=<selected fixture camera>`, `tracking_state="idle"`, zero `frame_size`, empty landmarks/skeleton
+  - changing to unsupported `source.kind = video_file` failed honestly with `state=error`, `last_error.code="unsupported_source_kind"`, and normalized frame truthfully switched to `source_kind="video_file"` + `source_id="res://clips/demo.mp4"`
+
+Audit conclusion: pass. The repaired slice is truly complete for the planned scope. No tracked source remains under `.testbed/addons` or `.testbed/.addons` for this repo; `scripts/prepare_testbed.sh` is truthful proving glue rather than hidden owned source; the tool repo still owns backend registration/resolution and public lifecycle/state/preview/normalized contract behavior; vendor-specific implementation details do not leak into repo-root sharable source; the real vendor runtime-probe lane starts truthfully for `live_camera`; and unsupported `video_file` use still fails honestly instead of pretending replay support exists. Remaining non-blocking warnings are limited to vendor `.uid` regeneration and the known `ObjectDB instances leaked at exit` message during headless import/shutdown.
 
 ---
 
@@ -226,14 +258,14 @@ This enforces the serialized coder → QA → auditor lane in the owning repo.
 
 ## Final Results
 
-**Status:** ⚠️ Coder complete / awaiting QA + audit
+**Status:** ✅ Complete
 
-**What We Built:** Landed the repo-root backend registration/resolution seam and the first truthful `aerobeat-tool-camera-tracking` live-camera integration proof against the real `aerobeat-vendor-mediapipe-python` runtime probe lane.
+**What We Built:** Landed and independently audited the repo-root backend registration/resolution seam plus the first truthful `aerobeat-tool-camera-tracking` live-camera integration proof against the real `aerobeat-vendor-mediapipe-python` runtime probe lane. The repair commit also restored honest source ownership by removing tracked addon-mirror shims and replacing them with a local proving-only overlay helper.
 
-**Reference Check:** `REF-01` remains honored because the slice stays locked to `live_camera` only. `REF-02`, `REF-03`, `REF-05`, and `REF-06` remain intact because lifecycle, preview attachment semantics, source coordination, and normalized public tracking-frame truth still live in this repo. `REF-04`, `REF-07`, `REF-08`, and `REF-09` are now exercised through the tool boundary rather than only inside the vendor repo. `REF-10` is satisfied because the proving surface demonstrates truthful startup/list/change/error behavior without claiming replay, long-lived inference, or consumer migration.
+**Reference Check:** `REF-01` remains honored because the slice stays locked to `live_camera` only and still rejects `video_file` honestly. `REF-02`, `REF-03`, `REF-05`, and `REF-06` remain intact because lifecycle, preview attachment semantics, source coordination, backend resolution, and normalized public tracking-frame truth still live in this repo. `REF-04`, `REF-07`, `REF-08`, and `REF-09` are now exercised through the tool boundary rather than only inside the vendor repo. `REF-10` is satisfied for the planned scope because the proving surface demonstrates truthful startup/list/change/error behavior without claiming replay, long-lived inference, or consumer migration.
 
 **Commits:**
-- Pending coder commit/push after final review of the repo diff.
+- `ebc60ac69ae58177c8cdce73ee51d49faad1fdf0` - Repair testbed camera-tracking overlay ownership
 
 **Lessons Learned:**
 - The critical enabling move was a tool-owned backend-factory seam, not another vendor singleton or a repo-root vendor preload.
