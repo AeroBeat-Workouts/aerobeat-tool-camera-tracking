@@ -205,7 +205,7 @@ func _sync_from_backend() -> void:
 		str(backend_state.get("state", STATE_IDLE)),
 		backend_state.get("detail", CameraTrackingConfig.make_state_detail())
 	)
-	_tracking_frame = _backend.get_tracking_frame()
+	_tracking_frame = CameraTrackingFrame.normalize(_backend.get_tracking_frame(), _active_config)
 	_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor())
 
 func _set_state(next_state: String, detail: Dictionary) -> void:
@@ -232,7 +232,7 @@ func _on_backend_state_changed(state: String, detail: Dictionary) -> void:
 	_set_state(state, detail)
 
 func _on_backend_tracking_updated(frame: Dictionary) -> void:
-	_tracking_frame = frame.duplicate(true)
+	_tracking_frame = CameraTrackingFrame.normalize(frame, _active_config)
 	tracking_updated.emit(_tracking_frame.duplicate(true))
 
 func _on_backend_preview_changed(descriptor: Dictionary) -> void:

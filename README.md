@@ -2,7 +2,7 @@
 
 This repo hosts the first **tool-owned camera-tracking contract and live-camera integration seam** for the AeroBeat tool lane.
 
-The current slice is intentionally narrow but now truthful: `CameraTracking` remains the **vendor-agnostic camera-tracking service** and **singleton shell** that owns lifecycle, preview attachment semantics, source coordination, backend resolution policy, and normalized public tracking payloads, while repo-local proving can register a real vendor backend factory and drive a live-camera bootstrap/probe path through the public tool API.
+The current slice is intentionally narrow but now truthful: `CameraTracking` remains the **vendor-agnostic camera-tracking service** and **singleton shell** that owns lifecycle, preview attachment semantics, source coordination, backend resolution policy, and normalized public tracking payloads, while repo-local proving can register a real vendor backend factory and drive a live-camera bootstrap/probe path through the public tool API. The public frame now carries only the minimal real sampled-frame facts the paired vendor slice can truly prove today.
 
 The tool surface is aligned to the approved API sketch in `.plans/bootstrap-architecture/CAMERA-TRACKING-API.md`, which defines the current state machine, required signals, config shape, preview ownership model, and normalized tracking-frame payload. The newly added backend-factory seam keeps sharable ownership here at the repo root without hard-preloading vendor source from this package.
 
@@ -16,14 +16,14 @@ The tool surface is aligned to the approved API sketch in `.plans/bootstrap-arch
 - `CameraTrackingBackend` interface seam for concrete integrations
 - `CameraTrackingFakeBackend` proving backend for repo-local tests
 - preview attachment contract helpers that preserve the preferred `attach_preview_surface(node)` ownership model
-- normalized tracking-frame default/stub contract for downstream consumers and tests
+- normalized tracking-frame contract for downstream consumers and tests, with real sample timestamp/source/frame-size facts when the vendor runtime can prove them
 - `.testbed/` proving that `backend = mediapipe_python` plus `source.kind = live_camera` can flow through the real vendor runtime probe lane truthfully
 
 ## Repository details
 
 - **Type:** AeroBeat tool package
 - **License:** **Mozilla Public License 2.0 (MPL 2.0)**
-- **Implementation status:** truthful live-camera integration slice for backend registration/resolution, runtime probe startup, camera inventory, preview facts, and normalized default-frame behavior; replay/video-file support and long-lived tracking inference are still deferred
+- **Implementation status:** truthful live-camera integration slice for backend registration/resolution, runtime probe startup, camera inventory, preview facts, and normalized minimal-real-frame behavior (`timestamp_ms`, source identity, and `frame_size` now come from a real sampled frame when available); replay/video-file support and long-lived tracking inference are still deferred
 
 ## GodotEnv development flow
 
@@ -76,5 +76,5 @@ godot --headless --path .testbed --script addons/gut/gut_cmdln.gd \
 ## Notes for later slices
 
 - replay/video-file integration remains out of scope for the current truthful live-camera slice and should still fail honestly
-- long-lived MediaPipe tracking inference is still deferred; the normalized tracking frame may remain empty/default while the runtime probe lane is the only live implementation
+- long-lived MediaPipe tracking inference is still deferred; only minimal real sampled-frame facts (`timestamp_ms`, source identity, `frame_size`) are non-empty today while richer tracking fields remain default/empty
 - downstream consumers will still need a stable product/runtime registration pattern, but the tool-side backend-factory seam is now the ownership boundary for that later work

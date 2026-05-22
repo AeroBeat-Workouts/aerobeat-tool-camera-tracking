@@ -47,6 +47,29 @@ func test_camera_tracking_defaults_expose_contract_shell() -> void:
 	assert_false(tracker.get_preview_descriptor().get("attached"))
 	tracker.free()
 
+func test_frame_normalization_preserves_tool_defaults_for_unproven_fields() -> void:
+	var frame := CameraTrackingFrame.normalize({
+		"timestamp_ms": 42,
+		"backend": "mediapipe_python",
+		"source_kind": "live_camera",
+		"source_id": "/dev/video0",
+		"tracking_state": "idle",
+		"frame_size": {"x": 640, "y": 480}
+	}, {
+		"backend": "mediapipe_python",
+		"source": {"kind": "live_camera", "camera_id": "/dev/video0"},
+		"preview": {"flip_horizontal": false}
+	})
+	assert_eq(frame.get("timestamp_ms"), 42)
+	assert_eq(frame.get("frame_size", {}).get("x"), 640)
+	assert_eq(frame.get("frame_size", {}).get("y"), 480)
+	assert_eq(frame.get("confidence"), 0.0)
+	assert_eq(frame.get("head_position", {}).get("z"), 0.0)
+	assert_eq(frame.get("landmarks", []).size(), 0)
+	assert_eq(frame.get("skeleton", {}).size(), 0)
+	assert_false(frame.get("preview_transform", {}).get("flip_horizontal"))
+	assert_eq(frame.get("preview_transform", {}).get("space"), "gameplay_normalized")
+
 func test_attach_and_detach_preview_surface_updates_descriptor() -> void:
 	var tracker := CameraTracking.new()
 	var parent := Node.new()
@@ -118,6 +141,8 @@ func test_fake_backend_drives_state_preview_and_tracking_contracts() -> void:
 	})
 	assert_eq(tracker.get_tracking_frame().get("timestamp_ms"), 42)
 	assert_eq(tracking_events.back().get("confidence"), 0.99)
+	assert_eq(tracking_events.back().get("preview_transform", {}).get("flip_horizontal"), true)
+	assert_eq(tracking_events.back().get("preview_transform", {}).get("space"), "gameplay_normalized")
 	tracker.free()
 
 func test_registered_vendor_backend_starts_live_camera_truthfully_and_preserves_preview_ownership() -> void:
@@ -151,7 +176,12 @@ func test_registered_vendor_backend_starts_live_camera_truthfully_and_preserves_
 	assert_eq(tracker.get_tracking_frame().get("source_kind"), "live_camera")
 	assert_eq(tracker.get_tracking_frame().get("source_id"), selected_camera_id)
 	assert_eq(tracker.get_tracking_frame().get("tracking_state"), "idle")
-	assert_eq(tracker.get_tracking_frame().get("frame_size", {}).get("x"), 0)
+	assert_eq(tracker.get_tracking_frame().get("timestamp_ms"), 1710000000456)
+	assert_eq(tracker.get_tracking_frame().get("frame_size", {}).get("x"), 640)
+	assert_eq(tracker.get_tracking_frame().get("frame_size", {}).get("y"), 480)
+	assert_eq(tracker.get_tracking_frame().get("confidence"), 0.0)
+	assert_eq(tracker.get_tracking_frame().get("landmarks", []).size(), 0)
+	assert_eq(tracker.get_tracking_frame().get("skeleton", {}).size(), 0)
 	assert_true(tracker.is_running())
 
 	parent.free()
@@ -172,6 +202,9 @@ func test_registered_vendor_backend_change_surfaces_truthful_restart_and_unsuppo
 	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_RUNNING)
 	assert_eq(tracker.get_active_config().get("source", {}).get("camera_id"), _fixture_root.path_join("video2"))
 	assert_eq(tracker.get_tracking_frame().get("source_id"), _fixture_root.path_join("video2"))
+	assert_eq(tracker.get_tracking_frame().get("timestamp_ms"), 1710000000456)
+	assert_eq(tracker.get_tracking_frame().get("frame_size", {}).get("x"), 640)
+	assert_eq(tracker.get_tracking_frame().get("frame_size", {}).get("y"), 480)
 	assert_false(tracker.get_state().get("detail", {}).get("tracking_ready"))
 
 	tracker.change({
@@ -208,7 +241,11 @@ func _make_live_config(overrides: Dictionary = {}) -> Dictionary:
 		"runtime": {
 			"environment": {
 				"AEROBEAT_CAMERA_ROOT": _fixture_root,
-				"AEROBEAT_CAMERA_PATTERN": "video*"
+				"AEROBEAT_CAMERA_PATTERN": "video*",
+				"AEROBEAT_CAMERA_SAMPLE_FIXTURES_JSON": JSON.stringify({
+					_fixture_root.path_join("video0"): {"width": 1280, "height": 720, "timestamp_ms": 1710000000123},
+					_fixture_root.path_join("video2"): {"width": 640, "height": 480, "timestamp_ms": 1710000000456}
+				})
 			}
 		}
 	}
