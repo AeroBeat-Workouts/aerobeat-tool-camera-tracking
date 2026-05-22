@@ -112,10 +112,5 @@ static func _normalize_visibility(landmark: Dictionary) -> float:
 static func _normalize_unit_coordinate(value: float) -> float:
 	return clampf(value, 0.0, 1.0)
 
-static func _normalize_tracking_state(state: Variant, landmarks: Array) -> String:
-	var normalized_state := str(state).strip_edges().to_lower()
-	if normalized_state == "tracked":
-		return "tracked" if landmarks.is_empty() == false else "idle"
-	if normalized_state == "idle":
-		return "idle"
-	return normalized_state
+static func _normalize_tracking_state(_state: Variant, landmarks: Array) -> String:
+	return "tracked" if landmarks.is_empty() == false else "idle"

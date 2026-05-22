@@ -2,7 +2,7 @@
 
 This repo hosts the first **tool-owned camera-tracking contract and live-camera integration seam** for the AeroBeat tool lane.
 
-The current slice is intentionally narrow but now truthful: `CameraTracking` remains the **vendor-agnostic camera-tracking service** and **singleton shell** that owns lifecycle, preview attachment semantics, source coordination, backend resolution policy, and normalized public tracking payloads, while repo-local proving can register a real vendor backend factory and drive a live-camera bootstrap/probe path through the public tool API. The public frame now carries only the minimal real sampled-frame facts and minimal landmark fields the paired vendor slice can truly prove today.
+The current slice is intentionally narrow but now truthful: `CameraTracking` remains the **vendor-agnostic camera-tracking service** and **singleton shell** that owns lifecycle, preview attachment semantics, source coordination, backend resolution policy, and normalized public tracking payloads, while repo-local proving can register a real vendor backend factory and drive a live-camera path through the public tool API. The public frame now stays conservative while becoming continuous: repeated live updates can advance the latest normalized frame over time, `detail.tracking_ready` can truthfully mean the continuous lane is active, and the public frame still carries only the minimal real landmark fields the paired vendor slice can truly prove.
 
 The tool surface is aligned to the approved API sketch in `.plans/bootstrap-architecture/CAMERA-TRACKING-API.md`, which defines the current state machine, required signals, config shape, preview ownership model, and normalized tracking-frame payload. The newly added backend-factory seam keeps sharable ownership here at the repo root without hard-preloading vendor source from this package.
 
@@ -77,6 +77,7 @@ godot --headless --path .testbed --script addons/gut/gut_cmdln.gd \
 ## Notes for later slices
 
 - replay/video-file integration remains out of scope for the current truthful live-camera slice and should still fail honestly
-- long-lived MediaPipe tracking inference is still deferred; the current live path is still a sampled snapshot, not a stream
-- public landmarks are intentionally limited to `id/x/y/z/v` on sampled success; `confidence`, `head_position`, `head_velocity`, `head_orientation`, and `skeleton` remain default/empty by design
+- public continuous live-camera updates are now supported only to the level the paired vendor runtime can prove; `get_tracking_frame()` surfaces the latest normalized frame and `tracking_updated` can repeat while the service remains running
+- frame-level public tracking truth is still intentionally conservative: only `tracked` (current normalized frame has landmarks) or `idle` (it does not) are claimed here
+- public landmarks are intentionally limited to `id/x/y/z/v`; `confidence`, `head_position`, `head_velocity`, `head_orientation`, and `skeleton` remain default/empty by design
 - downstream consumers will still need a stable product/runtime registration pattern, but the tool-side backend-factory seam is now the ownership boundary for that later work

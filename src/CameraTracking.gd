@@ -48,6 +48,10 @@ var _backend: CameraTrackingBackend = null
 var _attached_preview_surface: Node = null
 var _backend_resolution_mode: String = ""
 var _resolved_backend_id: String = ""
+var _last_cameras: Array = []
+
+func _ready() -> void:
+	set_process(false)
 
 static func register_backend_factory(backend_id: String, factory: Callable) -> void:
 	CameraTrackingBackendRegistry.register_factory(backend_id, factory)
@@ -99,11 +103,11 @@ func change(config: Dictionary) -> void:
 	_backend.change(_active_config)
 
 func list_cameras() -> Array:
-	if _backend == null:
-		return []
-	return _backend.list_cameras()
+	_refresh_from_backend_if_running(false)
+	return _last_cameras.duplicate(true)
 
 func get_state() -> Dictionary:
+	_refresh_from_backend_if_running(false)
 	return {
 		"state": _state,
 		"detail": _state_detail.duplicate(true)
@@ -113,9 +117,11 @@ func get_active_config() -> Dictionary:
 	return _active_config.duplicate(true)
 
 func get_tracking_frame() -> Dictionary:
+	_refresh_from_backend_if_running(false)
 	return _tracking_frame.duplicate(true)
 
 func get_preview_descriptor() -> Dictionary:
+	_refresh_from_backend_if_running(false)
 	return _preview_descriptor.duplicate(true)
 
 func attach_preview_surface(node: Node) -> void:
@@ -199,6 +205,7 @@ func _disconnect_backend(backend: CameraTrackingBackend) -> void:
 
 func _sync_from_backend() -> void:
 	if _backend == null:
+		_last_cameras = []
 		return
 	var backend_state: Dictionary = _backend.get_state()
 	_set_state(
@@ -207,6 +214,8 @@ func _sync_from_backend() -> void:
 	)
 	_tracking_frame = CameraTrackingFrame.normalize(_backend.get_tracking_frame(), _active_config)
 	_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor())
+	_last_cameras = _backend.list_cameras().duplicate(true)
+	_sync_process_state()
 
 func _set_state(next_state: String, detail: Dictionary) -> void:
 	_state = next_state
@@ -226,10 +235,54 @@ func _fail_with(error_info: Dictionary) -> void:
 	_set_state(STATE_ERROR, CameraTrackingConfig.make_state_detail())
 	error_raised.emit(_last_error.duplicate(true))
 
+func _process(_delta: float) -> void:
+	_refresh_from_backend_if_running(true)
+
+func _refresh_from_backend_if_running(emit_updates: bool) -> void:
+	if _backend == null:
+		return
+	if _state != STATE_RUNNING:
+		return
+
+	var backend_state: Dictionary = _backend.get_state()
+	var next_state := str(backend_state.get("state", _state))
+	var next_detail := CameraTrackingConfig.make_state_detail(
+		backend_state.get("detail", CameraTrackingConfig.make_state_detail())
+	)
+	var next_frame := CameraTrackingFrame.normalize(_backend.get_tracking_frame(), _active_config)
+	var next_preview := _compose_preview_descriptor(_backend.get_preview_descriptor())
+	var next_cameras := _backend.list_cameras().duplicate(true)
+
+	var state_changed_now := next_state != _state or next_detail != _state_detail
+	var frame_changed_now := next_frame != _tracking_frame
+	var preview_changed_now := next_preview != _preview_descriptor
+	var cameras_changed_now := next_cameras != _last_cameras
+
+	_state = next_state
+	_state_detail = next_detail
+	_tracking_frame = next_frame
+	_preview_descriptor = next_preview
+	_last_cameras = next_cameras
+	_sync_process_state()
+
+	if emit_updates:
+		if preview_changed_now:
+			preview_changed.emit(_preview_descriptor.duplicate(true))
+		if frame_changed_now:
+			tracking_updated.emit(_tracking_frame.duplicate(true))
+		if cameras_changed_now:
+			cameras_changed.emit(_last_cameras.duplicate(true))
+		if state_changed_now:
+			state_changed.emit(_state, _state_detail.duplicate(true))
+
+func _sync_process_state() -> void:
+	set_process(_backend != null and _state == STATE_RUNNING and is_inside_tree())
+
 func _on_backend_state_changed(state: String, detail: Dictionary) -> void:
 	if state != STATE_ERROR:
 		_last_error = {}
 	_set_state(state, detail)
+	_sync_process_state()
 
 func _on_backend_tracking_updated(frame: Dictionary) -> void:
 	_tracking_frame = CameraTrackingFrame.normalize(frame, _active_config)
@@ -240,7 +293,8 @@ func _on_backend_preview_changed(descriptor: Dictionary) -> void:
 	preview_changed.emit(_preview_descriptor.duplicate(true))
 
 func _on_backend_cameras_changed(cameras: Array) -> void:
-	cameras_changed.emit(cameras.duplicate(true))
+	_last_cameras = cameras.duplicate(true)
+	cameras_changed.emit(_last_cameras.duplicate(true))
 
 func _on_backend_error_raised(error_info: Dictionary) -> void:
 	_last_error = error_info.duplicate(true)

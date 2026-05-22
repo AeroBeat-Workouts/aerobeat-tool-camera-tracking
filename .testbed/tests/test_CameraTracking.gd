@@ -5,6 +5,78 @@ const MediaPipePythonRuntimeBridge = preload("res://addons/aerobeat-vendor-media
 
 var _fixture_root := ""
 
+class PollingFakeBackend extends CameraTrackingBackend:
+	var _phase: int = 0
+	var _preview_descriptor: Dictionary = {
+		"backend": "polling_fake",
+		"attached": false,
+		"enabled": true,
+		"flip_horizontal": true,
+		"surface_path": NodePath(""),
+		"space": "gameplay_normalized"
+	}
+	var _cameras: Array = [{"id": "/dev/video0", "camera_id": "/dev/video0", "label": "Polling Camera"}]
+
+	func get_backend_id() -> String:
+		return "polling_fake"
+
+	func start(_config: Dictionary) -> void:
+		_phase = 0
+		emit_signal("state_changed", CameraTracking.STATE_RUNNING, _current_detail())
+		emit_signal("preview_changed", _preview_descriptor.duplicate(true))
+		emit_signal("cameras_changed", _cameras.duplicate(true))
+		emit_signal("tracking_updated", get_tracking_frame())
+
+	func stop() -> void:
+		emit_signal("state_changed", CameraTracking.STATE_IDLE, CameraTrackingConfig.make_state_detail())
+
+	func change(config: Dictionary) -> void:
+		start(config)
+
+	func list_cameras() -> Array:
+		return _cameras.duplicate(true)
+
+	func get_state() -> Dictionary:
+		return {
+			"state": CameraTracking.STATE_RUNNING,
+			"detail": _current_detail()
+		}
+
+	func advance() -> void:
+		_phase = min(_phase + 1, 2)
+
+	func get_tracking_frame() -> Dictionary:
+		var timestamp_ms := 1000
+		var landmarks: Array = [{"id": 0, "x": 0.2, "y": 0.3, "z": -0.1, "visibility": 0.9}]
+		if _phase >= 2:
+			timestamp_ms = 1200
+			landmarks = [{"id": 0, "x": 0.8, "y": 0.1, "z": -0.2, "visibility": 0.8}]
+		elif _phase == 1:
+			timestamp_ms = 1100
+			landmarks = []
+		return {
+			"timestamp_ms": timestamp_ms,
+			"backend": "polling_fake",
+			"source_kind": "live_camera",
+			"source_id": "/dev/video0",
+			"tracking_state": "reacquiring",
+			"frame_size": {"x": 640, "y": 480},
+			"landmarks": landmarks,
+			"head_position": {"x": 9.0, "y": 8.0, "z": 7.0},
+			"skeleton": {"hips": {"x": 0.5}}
+		}
+
+	func get_preview_descriptor() -> Dictionary:
+		return _preview_descriptor.duplicate(true)
+
+	func _current_detail() -> Dictionary:
+		return CameraTrackingConfig.make_state_detail({
+			"backend_ready": true,
+			"preview_ready": true,
+			"tracking_ready": true,
+			"source_ready": true
+		})
+
 func before_each() -> void:
 	CameraTracking.clear_backend_factories()
 	_fixture_root = ProjectSettings.globalize_path("user://camera-tracking-fixture-%s" % str(Time.get_unix_time_from_system()))
@@ -192,6 +264,47 @@ func test_fake_backend_drives_state_preview_and_tracking_contracts() -> void:
 	assert_eq(tracking_events.back().get("preview_transform", {}).get("flip_horizontal"), true)
 	assert_eq(tracking_events.back().get("preview_transform", {}).get("space"), "gameplay_normalized")
 	tracker.free()
+
+func test_camera_tracking_refreshes_continuous_backend_updates_over_time() -> void:
+	var tracker := CameraTracking.new()
+	var backend := PollingFakeBackend.new()
+	var tracking_events: Array = []
+	var state_events: Array = []
+	get_tree().root.add_child(tracker)
+	tracker.tracking_updated.connect(func(frame: Dictionary): tracking_events.append(frame))
+	tracker.state_changed.connect(func(state: String, detail: Dictionary): state_events.append({"state": state, "detail": detail}))
+	tracker.set_backend(backend)
+
+	tracker.start({
+		"backend": "polling_fake",
+		"source": {"kind": "live_camera", "camera_id": "/dev/video0"},
+		"preview": {"enabled": true, "flip_horizontal": true}
+	})
+	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_RUNNING)
+	assert_true(tracker.get_state().get("detail", {}).get("tracking_ready"))
+
+	backend.advance()
+	tracker._process(0.0)
+	backend.advance()
+	tracker._process(0.0)
+
+	assert_true(tracking_events.size() >= 3)
+	assert_eq(tracker.get_tracking_frame().get("timestamp_ms"), 1200)
+	assert_eq(tracker.get_tracking_frame().get("tracking_state"), "tracked")
+	assert_eq(tracker.get_tracking_frame().get("landmarks", []).size(), 1)
+	assert_true(absf(float(tracker.get_tracking_frame().get("landmarks", [])[0].get("x")) - 0.2) < 0.0001)
+	assert_eq(float(tracker.get_tracking_frame().get("landmarks", [])[0].get("v")), 0.8)
+	assert_eq(tracking_events[1].get("tracking_state"), "idle")
+	assert_eq(tracking_events[1].get("landmarks", []).size(), 0)
+	assert_true(state_events.back().get("detail", {}).get("tracking_ready"))
+	assert_eq(tracker.get_tracking_frame().get("head_position", {}).get("z"), 0.0)
+	assert_eq(tracker.get_tracking_frame().get("skeleton", {}).size(), 0)
+	assert_eq(tracker.get_tracking_frame().get("preview_transform", {}).get("space"), "gameplay_normalized")
+	assert_true(tracker.is_running())
+
+	tracker.stop()
+	tracker.queue_free()
+	await get_tree().process_frame
 
 func test_registered_vendor_backend_starts_live_camera_truthfully_and_preserves_preview_ownership() -> void:
 	_register_vendor_backend()
