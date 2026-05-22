@@ -117,6 +117,7 @@ func test_camera_tracking_defaults_expose_contract_shell() -> void:
 	assert_eq(tracker.get_tracking_frame().get("tracking_state"), "idle")
 	assert_eq(tracker.get_tracking_frame().get("preview_transform", {}).get("space"), "gameplay_normalized")
 	assert_false(tracker.get_preview_descriptor().get("attached"))
+	assert_eq(int(tracker.get_preview_descriptor().get("attached_surface_count", -1)), 0)
 	tracker.free()
 
 func test_frame_normalization_preserves_tool_defaults_for_unproven_fields() -> void:
@@ -197,9 +198,39 @@ func test_attach_and_detach_preview_surface_updates_descriptor() -> void:
 	tracker.attach_preview_surface(slot)
 	assert_true(tracker.get_preview_descriptor().get("attached"))
 	assert_eq(tracker.get_preview_descriptor().get("surface_path"), NodePath("PreviewSlot"))
+	assert_eq(int(tracker.get_preview_descriptor().get("attached_surface_count", -1)), 1)
 
 	tracker.detach_preview_surface()
 	assert_false(tracker.get_preview_descriptor().get("attached"))
+	assert_eq(int(tracker.get_preview_descriptor().get("attached_surface_count", -1)), 0)
+	parent.free()
+	tracker.free()
+
+func test_preview_surface_stack_restores_previous_attachment_when_latest_detaches() -> void:
+	var tracker := CameraTracking.new()
+	var parent := Node.new()
+	parent.name = "Parent"
+	var slot_a := Node.new()
+	slot_a.name = "PreviewSlotA"
+	var slot_b := Node.new()
+	slot_b.name = "PreviewSlotB"
+	parent.add_child(slot_a)
+	parent.add_child(slot_b)
+
+	tracker.attach_preview_surface(slot_a)
+	tracker.attach_preview_surface(slot_b)
+	assert_true(tracker.get_preview_descriptor().get("attached"))
+	assert_eq(tracker.get_preview_descriptor().get("surface_path"), NodePath("PreviewSlotB"))
+	assert_eq(int(tracker.get_preview_descriptor().get("attached_surface_count", -1)), 2)
+
+	tracker.detach_preview_surface()
+	assert_true(tracker.get_preview_descriptor().get("attached"))
+	assert_eq(tracker.get_preview_descriptor().get("surface_path"), NodePath("PreviewSlotA"))
+	assert_eq(int(tracker.get_preview_descriptor().get("attached_surface_count", -1)), 1)
+
+	tracker.detach_preview_surface()
+	assert_false(tracker.get_preview_descriptor().get("attached"))
+	assert_eq(int(tracker.get_preview_descriptor().get("attached_surface_count", -1)), 0)
 	parent.free()
 	tracker.free()
 
@@ -332,6 +363,7 @@ func test_registered_vendor_backend_starts_live_camera_truthfully_and_preserves_
 	assert_eq(tracker.get_preview_descriptor().get("backend"), "mediapipe_python")
 	assert_true(tracker.get_preview_descriptor().get("attached"))
 	assert_eq(tracker.get_preview_descriptor().get("surface_path"), NodePath("PreviewSlot"))
+	assert_eq(int(tracker.get_preview_descriptor().get("attached_surface_count", -1)), 1)
 	assert_false(tracker.get_preview_descriptor().get("flip_horizontal"))
 	assert_eq(tracker.get_tracking_frame().get("backend"), "mediapipe_python")
 	assert_eq(tracker.get_tracking_frame().get("source_kind"), "live_camera")
@@ -347,6 +379,16 @@ func test_registered_vendor_backend_starts_live_camera_truthfully_and_preserves_
 	assert_eq(float(tracker.get_tracking_frame().get("landmarks", [])[0].get("v")), 0.95)
 	assert_eq(tracker.get_tracking_frame().get("skeleton", {}).size(), 0)
 	assert_true(tracker.is_running())
+
+	var inset_slot := Node.new()
+	inset_slot.name = "InsetPreviewSlot"
+	parent.add_child(inset_slot)
+	tracker.attach_preview_surface(inset_slot)
+	assert_eq(tracker.get_preview_descriptor().get("surface_path"), NodePath("InsetPreviewSlot"))
+	assert_eq(int(tracker.get_preview_descriptor().get("attached_surface_count", -1)), 2)
+	tracker.detach_preview_surface()
+	assert_eq(tracker.get_preview_descriptor().get("surface_path"), NodePath("PreviewSlot"))
+	assert_eq(int(tracker.get_preview_descriptor().get("attached_surface_count", -1)), 1)
 
 	parent.free()
 	tracker.free()

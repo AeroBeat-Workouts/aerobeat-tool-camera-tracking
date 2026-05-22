@@ -45,7 +45,7 @@ var _tracking_frame: Dictionary = CameraTrackingFrame.empty(_active_config)
 var _preview_descriptor: Dictionary = CameraTrackingPreview.detached(_active_config)
 var _last_error: Dictionary = {}
 var _backend: CameraTrackingBackend = null
-var _attached_preview_surface: Node = null
+var _attached_preview_surfaces: Array = []
 var _backend_resolution_mode: String = ""
 var _resolved_backend_id: String = ""
 var _last_cameras: Array = []
@@ -125,12 +125,23 @@ func get_preview_descriptor() -> Dictionary:
 	return _preview_descriptor.duplicate(true)
 
 func attach_preview_surface(node: Node) -> void:
-	_attached_preview_surface = node
+	if node == null or not is_instance_valid(node):
+		return
+	_prune_preview_surfaces()
+	var existing_index := _preview_surface_index(node)
+	if existing_index >= 0:
+		_attached_preview_surfaces.remove_at(existing_index)
+	_attached_preview_surfaces.append(node)
 	_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor() if _backend != null else {})
 	preview_changed.emit(_preview_descriptor.duplicate(true))
 
 func detach_preview_surface() -> void:
-	_attached_preview_surface = null
+	_prune_preview_surfaces()
+	if _attached_preview_surfaces.is_empty():
+		_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor() if _backend != null else {})
+		preview_changed.emit(_preview_descriptor.duplicate(true))
+		return
+	_attached_preview_surfaces.remove_at(_attached_preview_surfaces.size() - 1)
 	_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor() if _backend != null else {})
 	preview_changed.emit(_preview_descriptor.duplicate(true))
 
@@ -223,12 +234,36 @@ func _set_state(next_state: String, detail: Dictionary) -> void:
 	state_changed.emit(_state, _state_detail.duplicate(true))
 
 func _compose_preview_descriptor(backend_descriptor: Dictionary) -> Dictionary:
-	var descriptor := CameraTrackingPreview.attached(_attached_preview_surface, _active_config, backend_descriptor)
-	if backend_descriptor.is_empty() and _attached_preview_surface == null:
-		descriptor = CameraTrackingPreview.detached(_active_config)
+	_prune_preview_surfaces()
+	var attached_surface := _get_attached_preview_surface()
+	var attachment_count := _attached_preview_surfaces.size()
+	var descriptor := CameraTrackingPreview.attached(attached_surface, _active_config, backend_descriptor, attachment_count)
+	if backend_descriptor.is_empty() and attached_surface == null:
+		descriptor = CameraTrackingPreview.detached(_active_config, attachment_count)
 	if backend_descriptor.has("backend"):
 		descriptor["backend"] = backend_descriptor["backend"]
 	return descriptor
+
+func _get_attached_preview_surface() -> Node:
+	_prune_preview_surfaces()
+	if _attached_preview_surfaces.is_empty():
+		return null
+	var surface: Variant = _attached_preview_surfaces.back()
+	return surface if surface is Node and is_instance_valid(surface) else null
+
+func _preview_surface_index(node: Node) -> int:
+	for i in range(_attached_preview_surfaces.size()):
+		var surface: Variant = _attached_preview_surfaces[i]
+		if surface == node and is_instance_valid(surface):
+			return i
+	return -1
+
+func _prune_preview_surfaces() -> void:
+	var retained: Array = []
+	for surface: Variant in _attached_preview_surfaces:
+		if surface is Node and is_instance_valid(surface):
+			retained.append(surface)
+	_attached_preview_surfaces = retained
 
 func _fail_with(error_info: Dictionary) -> void:
 	_last_error = error_info.duplicate(true)
