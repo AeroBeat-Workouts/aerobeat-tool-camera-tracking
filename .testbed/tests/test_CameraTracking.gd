@@ -54,7 +54,10 @@ func test_frame_normalization_preserves_tool_defaults_for_unproven_fields() -> v
 		"source_kind": "live_camera",
 		"source_id": "/dev/video0",
 		"tracking_state": "idle",
-		"frame_size": {"x": 640, "y": 480}
+		"confidence": 0.91,
+		"frame_size": {"x": 640, "y": 480},
+		"head_position": {"x": 9.0, "y": 8.0, "z": 7.0},
+		"skeleton": {"hips": {"x": 0.5}}
 	}, {
 		"backend": "mediapipe_python",
 		"source": {"kind": "live_camera", "camera_id": "/dev/video0"},
@@ -69,6 +72,47 @@ func test_frame_normalization_preserves_tool_defaults_for_unproven_fields() -> v
 	assert_eq(frame.get("skeleton", {}).size(), 0)
 	assert_false(frame.get("preview_transform", {}).get("flip_horizontal"))
 	assert_eq(frame.get("preview_transform", {}).get("space"), "gameplay_normalized")
+
+func test_frame_normalization_maps_vendor_landmarks_into_public_contract() -> void:
+	var frame := CameraTrackingFrame.normalize({
+		"timestamp_ms": 99,
+		"backend": "mediapipe_python",
+		"source_kind": "live_camera",
+		"source_id": "/dev/video0",
+		"tracking_state": "tracked",
+		"landmarks": [
+			{"id": 0, "x": 0.25, "y": 0.4, "z": -0.15, "visibility": 0.95},
+			{"id": 12, "x": 1.4, "y": -0.2, "z": -0.09, "v": 0.88},
+			{"x": 0.5, "y": 0.5, "z": 0.0, "visibility": 1.0}
+		]
+	}, {
+		"backend": "mediapipe_python",
+		"source": {"kind": "live_camera", "camera_id": "/dev/video0"},
+		"preview": {"flip_horizontal": true}
+	})
+	assert_eq(frame.get("tracking_state"), "tracked")
+	assert_eq(frame.get("landmarks", []).size(), 2)
+	assert_eq(int(frame["landmarks"][0]["id"]), 0)
+	assert_eq(float(frame["landmarks"][0]["x"]), 0.75)
+	assert_eq(float(frame["landmarks"][0]["y"]), 0.4)
+	assert_eq(float(frame["landmarks"][0]["z"]), -0.15)
+	assert_eq(float(frame["landmarks"][0]["v"]), 0.95)
+	assert_eq(float(frame["landmarks"][1]["x"]), 0.0)
+	assert_eq(float(frame["landmarks"][1]["y"]), 0.0)
+	assert_false(frame["landmarks"][0].has("visibility"))
+
+func test_frame_normalization_keeps_tracking_idle_when_no_public_landmarks_exist() -> void:
+	var frame := CameraTrackingFrame.normalize({
+		"tracking_state": "tracked",
+		"landmarks": [
+			{"x": 0.5, "y": 0.5, "z": 0.0, "visibility": 1.0}
+		]
+	}, {
+		"backend": "mediapipe_python",
+		"source": {"kind": "live_camera", "camera_id": "/dev/video0"}
+	})
+	assert_eq(frame.get("tracking_state"), "idle")
+	assert_eq(frame.get("landmarks", []).size(), 0)
 
 func test_attach_and_detach_preview_surface_updates_descriptor() -> void:
 	var tracker := CameraTracking.new()
@@ -136,11 +180,15 @@ func test_fake_backend_drives_state_preview_and_tracking_contracts() -> void:
 		"head_position": {"x": 0.1, "y": 0.2, "z": 0.3},
 		"head_velocity": {"x": 0.0, "y": 0.0, "z": 0.0},
 		"head_orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
-		"landmarks": [],
-		"skeleton": {}
+		"landmarks": [
+			{"id": 15, "x": 0.2, "y": 0.3, "z": -0.1, "visibility": 0.9}
+		],
+		"skeleton": {"hips": {"x": 0.5}}
 	})
 	assert_eq(tracker.get_tracking_frame().get("timestamp_ms"), 42)
-	assert_eq(tracking_events.back().get("confidence"), 0.99)
+	assert_eq(tracking_events.back().get("confidence"), 0.0)
+	assert_eq(tracking_events.back().get("head_position", {}).get("z"), 0.0)
+	assert_eq(tracking_events.back().get("landmarks", []).size(), 1)
 	assert_eq(tracking_events.back().get("preview_transform", {}).get("flip_horizontal"), true)
 	assert_eq(tracking_events.back().get("preview_transform", {}).get("space"), "gameplay_normalized")
 	tracker.free()
@@ -175,12 +223,15 @@ func test_registered_vendor_backend_starts_live_camera_truthfully_and_preserves_
 	assert_eq(tracker.get_tracking_frame().get("backend"), "mediapipe_python")
 	assert_eq(tracker.get_tracking_frame().get("source_kind"), "live_camera")
 	assert_eq(tracker.get_tracking_frame().get("source_id"), selected_camera_id)
-	assert_eq(tracker.get_tracking_frame().get("tracking_state"), "idle")
+	assert_eq(tracker.get_tracking_frame().get("tracking_state"), "tracked")
 	assert_eq(tracker.get_tracking_frame().get("timestamp_ms"), 1710000000456)
 	assert_eq(tracker.get_tracking_frame().get("frame_size", {}).get("x"), 640)
 	assert_eq(tracker.get_tracking_frame().get("frame_size", {}).get("y"), 480)
 	assert_eq(tracker.get_tracking_frame().get("confidence"), 0.0)
-	assert_eq(tracker.get_tracking_frame().get("landmarks", []).size(), 0)
+	assert_eq(tracker.get_tracking_frame().get("landmarks", []).size(), 2)
+	assert_eq(int(tracker.get_tracking_frame().get("landmarks", [])[0].get("id")), 0)
+	assert_eq(float(tracker.get_tracking_frame().get("landmarks", [])[0].get("x")), 0.25)
+	assert_eq(float(tracker.get_tracking_frame().get("landmarks", [])[0].get("v")), 0.95)
 	assert_eq(tracker.get_tracking_frame().get("skeleton", {}).size(), 0)
 	assert_true(tracker.is_running())
 
@@ -194,6 +245,8 @@ func test_registered_vendor_backend_change_surfaces_truthful_restart_and_unsuppo
 		"source": {"camera_id": _fixture_root.path_join("video0")}
 	}))
 	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_RUNNING)
+	assert_eq(tracker.get_tracking_frame().get("tracking_state"), "idle")
+	assert_eq(tracker.get_tracking_frame().get("landmarks", []).size(), 0)
 
 	tracker.change(_make_live_config({
 		"source": {"camera_id": _fixture_root.path_join("video2")},
@@ -205,6 +258,8 @@ func test_registered_vendor_backend_change_surfaces_truthful_restart_and_unsuppo
 	assert_eq(tracker.get_tracking_frame().get("timestamp_ms"), 1710000000456)
 	assert_eq(tracker.get_tracking_frame().get("frame_size", {}).get("x"), 640)
 	assert_eq(tracker.get_tracking_frame().get("frame_size", {}).get("y"), 480)
+	assert_eq(tracker.get_tracking_frame().get("tracking_state"), "tracked")
+	assert_eq(tracker.get_tracking_frame().get("landmarks", []).size(), 2)
 	assert_false(tracker.get_state().get("detail", {}).get("tracking_ready"))
 
 	tracker.change({
@@ -244,7 +299,15 @@ func _make_live_config(overrides: Dictionary = {}) -> Dictionary:
 				"AEROBEAT_CAMERA_PATTERN": "video*",
 				"AEROBEAT_CAMERA_SAMPLE_FIXTURES_JSON": JSON.stringify({
 					_fixture_root.path_join("video0"): {"width": 1280, "height": 720, "timestamp_ms": 1710000000123},
-					_fixture_root.path_join("video2"): {"width": 640, "height": 480, "timestamp_ms": 1710000000456}
+					_fixture_root.path_join("video2"): {
+						"width": 640,
+						"height": 480,
+						"timestamp_ms": 1710000000456,
+						"landmarks": [
+							{"id": 0, "x": 0.25, "y": 0.4, "z": -0.15, "visibility": 0.95},
+							{"id": 12, "x": 0.61, "y": 0.52, "z": -0.09, "visibility": 0.88}
+						]
+					}
 				})
 			}
 		}

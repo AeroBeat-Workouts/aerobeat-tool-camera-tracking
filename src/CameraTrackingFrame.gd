@@ -35,6 +35,7 @@ static func normalize(frame: Dictionary, config: Dictionary = {}) -> Dictionary:
 	if frame.is_empty():
 		return normalized
 
+	var preview: Dictionary = CameraTrackingConfig.normalize(config).get("preview", {})
 	if frame.has("timestamp_ms"):
 		normalized["timestamp_ms"] = int(frame.get("timestamp_ms", 0))
 	if frame.has("backend"):
@@ -43,22 +44,18 @@ static func normalize(frame: Dictionary, config: Dictionary = {}) -> Dictionary:
 		normalized["source_kind"] = str(frame.get("source_kind", normalized.get("source_kind", CameraTrackingConfig.DEFAULT_SOURCE_KIND)))
 	if frame.has("source_id"):
 		normalized["source_id"] = str(frame.get("source_id", normalized.get("source_id", "")))
-	if frame.has("tracking_state"):
-		normalized["tracking_state"] = str(frame.get("tracking_state", "idle"))
-	if frame.has("confidence"):
-		normalized["confidence"] = float(frame.get("confidence", 0.0))
 	if frame.has("frame_size") and frame.get("frame_size") is Dictionary:
 		normalized["frame_size"] = _normalize_size(frame.get("frame_size", {}), normalized.get("frame_size", {}))
-	if frame.has("head_position") and frame.get("head_position") is Dictionary:
-		normalized["head_position"] = _normalize_vec3(frame.get("head_position", {}), normalized.get("head_position", {}))
-	if frame.has("head_velocity") and frame.get("head_velocity") is Dictionary:
-		normalized["head_velocity"] = _normalize_vec3(frame.get("head_velocity", {}), normalized.get("head_velocity", {}))
-	if frame.has("head_orientation") and frame.get("head_orientation") is Dictionary:
-		normalized["head_orientation"] = _normalize_quat(frame.get("head_orientation", {}), normalized.get("head_orientation", {}))
 	if frame.has("landmarks") and frame.get("landmarks") is Array:
-		normalized["landmarks"] = frame.get("landmarks", []).duplicate(true)
-	if frame.has("skeleton") and frame.get("skeleton") is Dictionary:
-		normalized["skeleton"] = frame.get("skeleton", {}).duplicate(true)
+		normalized["landmarks"] = _normalize_landmarks(
+			frame.get("landmarks", []),
+			bool(preview.get("flip_horizontal", true))
+		)
+	if frame.has("tracking_state"):
+		normalized["tracking_state"] = _normalize_tracking_state(
+			frame.get("tracking_state", "idle"),
+			normalized.get("landmarks", [])
+		)
 	return normalized
 
 static func _normalize_size(size: Dictionary, fallback: Dictionary) -> Dictionary:
@@ -81,3 +78,44 @@ static func _normalize_quat(quaternion: Dictionary, fallback: Dictionary) -> Dic
 		"z": float(quaternion.get("z", fallback.get("z", 0.0))),
 		"w": float(quaternion.get("w", fallback.get("w", 1.0)))
 	}
+
+static func _normalize_landmarks(landmarks: Array, flip_horizontal: bool) -> Array:
+	var normalized: Array = []
+	for landmark_variant in landmarks:
+		if not landmark_variant is Dictionary:
+			continue
+		var landmark: Dictionary = landmark_variant
+		if landmark.has("id") == false:
+			continue
+		normalized.append(_normalize_landmark(landmark, flip_horizontal))
+	return normalized
+
+static func _normalize_landmark(landmark: Dictionary, flip_horizontal: bool) -> Dictionary:
+	var x := _normalize_unit_coordinate(float(landmark.get("x", 0.0)))
+	if flip_horizontal:
+		x = 1.0 - x
+	return {
+		"id": int(landmark.get("id", -1)),
+		"x": x,
+		"y": _normalize_unit_coordinate(float(landmark.get("y", 0.0))),
+		"z": float(landmark.get("z", 0.0)),
+		"v": _normalize_visibility(landmark)
+	}
+
+static func _normalize_visibility(landmark: Dictionary) -> float:
+	if landmark.has("v"):
+		return float(landmark.get("v", 0.0))
+	if landmark.has("visibility"):
+		return float(landmark.get("visibility", 0.0))
+	return 0.0
+
+static func _normalize_unit_coordinate(value: float) -> float:
+	return clampf(value, 0.0, 1.0)
+
+static func _normalize_tracking_state(state: Variant, landmarks: Array) -> String:
+	var normalized_state := str(state).strip_edges().to_lower()
+	if normalized_state == "tracked":
+		return "tracked" if landmarks.is_empty() == false else "idle"
+	if normalized_state == "idle":
+		return "idle"
+	return normalized_state

@@ -30,6 +30,7 @@ func start(config: Dictionary) -> void:
 	tracking_frame = CameraTrackingFrame.empty(last_config)
 	tracking_frame["backend"] = "fake"
 	tracking_frame["tracking_state"] = "tracked"
+	tracking_frame["landmarks"] = [{"id": 0, "x": 0.5, "y": 0.5, "z": 0.0, "v": 1.0}]
 	emit_signal("state_changed", state, detail.duplicate(true))
 	emit_signal("preview_changed", preview_descriptor.duplicate(true))
 	emit_signal("tracking_updated", tracking_frame.duplicate(true))
@@ -45,6 +46,7 @@ func change(config: Dictionary) -> void:
 	tracking_frame = CameraTrackingFrame.empty(last_config)
 	tracking_frame["backend"] = "fake"
 	tracking_frame["tracking_state"] = "tracked"
+	tracking_frame["landmarks"] = [{"id": 0, "x": 0.5, "y": 0.5, "z": 0.0, "v": 1.0}]
 	preview_descriptor = CameraTrackingPreview.detached(last_config)
 	preview_descriptor["backend"] = "fake"
 	emit_signal("state_changed", CameraTracking.STATE_RESTARTING, CameraTrackingConfig.make_state_detail({
