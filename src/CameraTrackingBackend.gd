@@ -7,6 +7,9 @@ signal preview_changed(descriptor: Dictionary)
 signal cameras_changed(cameras: Array)
 signal error_raised(error_info: Dictionary)
 
+func get_backend_id() -> String:
+	return ""
+
 func start(_config: Dictionary) -> void:
 	push_error("CameraTrackingBackend.start() must be implemented by a concrete backend")
 

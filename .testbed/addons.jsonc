@@ -8,6 +8,13 @@
       "checkout": "main",
       "subfolder": "/"
     },
+    // Truthful live-camera proving installs the real MediaPipe Python vendor package,
+    // but repo-root ownership stays in src/ here and in the vendor repo there.
+    "aerobeat-vendor-mediapipe-python": {
+      "url": "git@github.com:AeroBeat-Workouts/aerobeat-vendor-mediapipe-python.git",
+      "checkout": "main",
+      "subfolder": "/"
+    },
     // GUT drives the repo-local test suite inside the hidden testbed/workbench.
     "gut": {
       "url": "git@github.com:bitwes/Gut.git",

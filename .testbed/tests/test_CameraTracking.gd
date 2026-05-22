@@ -1,5 +1,31 @@
 extends GutTest
 
+const MediaPipePythonCameraTrackingBackend = preload("res://addons/aerobeat-vendor-mediapipe-python/src/MediaPipePythonCameraTrackingBackend.gd")
+const MediaPipePythonRuntimeBridge = preload("res://addons/aerobeat-vendor-mediapipe-python/src/MediaPipePythonRuntimeBridge.gd")
+
+var _fixture_root := ""
+
+func before_each() -> void:
+	CameraTracking.clear_backend_factories()
+	_fixture_root = ProjectSettings.globalize_path("user://camera-tracking-fixture-%s" % str(Time.get_unix_time_from_system()))
+	DirAccess.make_dir_recursive_absolute(_fixture_root)
+	_write_fixture_camera("video0")
+	_write_fixture_camera("video2")
+
+func after_each() -> void:
+	CameraTracking.clear_backend_factories()
+	if _fixture_root != "":
+		var dir := DirAccess.open(_fixture_root)
+		if dir != null:
+			dir.list_dir_begin()
+			var entry := dir.get_next()
+			while entry != "":
+				if dir.current_is_dir() == false:
+					dir.remove(entry)
+				entry = dir.get_next()
+			dir.list_dir_end()
+		DirAccess.remove_absolute(_fixture_root)
+
 func test_config_normalization_preserves_contract_shape() -> void:
 	var normalized := CameraTrackingConfig.normalize({
 		"source": {"camera_id": "/dev/video7"},
@@ -13,7 +39,7 @@ func test_config_normalization_preserves_contract_shape() -> void:
 
 func test_camera_tracking_defaults_expose_contract_shell() -> void:
 	var tracker := CameraTracking.new()
-	assert_eq(CameraTracking.VERSION, "0.1.0")
+	assert_eq(CameraTracking.VERSION, "0.2.0")
 	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_IDLE)
 	assert_eq(tracker.get_state().get("detail", {}).keys().size(), 4)
 	assert_eq(tracker.get_tracking_frame().get("tracking_state"), "idle")
@@ -38,11 +64,12 @@ func test_attach_and_detach_preview_surface_updates_descriptor() -> void:
 	parent.free()
 	tracker.free()
 
-func test_start_without_backend_raises_structured_error() -> void:
+func test_start_without_registered_backend_raises_structured_error() -> void:
 	var tracker := CameraTracking.new()
 	tracker.start({"backend": "mediapipe_python"})
 	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_ERROR)
-	assert_eq(tracker.get_last_error().get("code"), "backend_missing")
+	assert_eq(tracker.get_last_error().get("code"), "backend_unregistered")
+	assert_eq(tracker.get_last_error().get("backend"), "mediapipe_python")
 	tracker.free()
 
 func test_fake_backend_drives_state_preview_and_tracking_contracts() -> void:
@@ -92,3 +119,111 @@ func test_fake_backend_drives_state_preview_and_tracking_contracts() -> void:
 	assert_eq(tracker.get_tracking_frame().get("timestamp_ms"), 42)
 	assert_eq(tracking_events.back().get("confidence"), 0.99)
 	tracker.free()
+
+func test_registered_vendor_backend_starts_live_camera_truthfully_and_preserves_preview_ownership() -> void:
+	_register_vendor_backend()
+	var tracker := CameraTracking.new()
+	var parent := Node.new()
+	parent.name = "Parent"
+	var slot := Node.new()
+	slot.name = "PreviewSlot"
+	parent.add_child(slot)
+	tracker.attach_preview_surface(slot)
+
+	var selected_camera_id := _fixture_root.path_join("video2")
+	tracker.start(_make_live_config({
+		"source": {"camera_id": selected_camera_id},
+		"preview": {"flip_horizontal": false}
+	}))
+
+	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_RUNNING)
+	assert_true(tracker.get_state().get("detail", {}).get("backend_ready"))
+	assert_true(tracker.get_state().get("detail", {}).get("preview_ready"))
+	assert_false(tracker.get_state().get("detail", {}).get("tracking_ready"))
+	assert_true(tracker.get_state().get("detail", {}).get("source_ready"))
+	assert_eq(tracker.list_cameras().size(), 2)
+	assert_eq(tracker.list_cameras()[1].get("camera_id"), selected_camera_id)
+	assert_eq(tracker.get_preview_descriptor().get("backend"), "mediapipe_python")
+	assert_true(tracker.get_preview_descriptor().get("attached"))
+	assert_eq(tracker.get_preview_descriptor().get("surface_path"), NodePath("PreviewSlot"))
+	assert_false(tracker.get_preview_descriptor().get("flip_horizontal"))
+	assert_eq(tracker.get_tracking_frame().get("backend"), "mediapipe_python")
+	assert_eq(tracker.get_tracking_frame().get("source_kind"), "live_camera")
+	assert_eq(tracker.get_tracking_frame().get("source_id"), selected_camera_id)
+	assert_eq(tracker.get_tracking_frame().get("tracking_state"), "idle")
+	assert_eq(tracker.get_tracking_frame().get("frame_size", {}).get("x"), 0)
+	assert_true(tracker.is_running())
+
+	parent.free()
+	tracker.free()
+
+func test_registered_vendor_backend_change_surfaces_truthful_restart_and_unsupported_source_error() -> void:
+	_register_vendor_backend()
+	var tracker := CameraTracking.new()
+	tracker.start(_make_live_config({
+		"source": {"camera_id": _fixture_root.path_join("video0")}
+	}))
+	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_RUNNING)
+
+	tracker.change(_make_live_config({
+		"source": {"camera_id": _fixture_root.path_join("video2")},
+		"preview": {"flip_horizontal": false}
+	}))
+	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_RUNNING)
+	assert_eq(tracker.get_active_config().get("source", {}).get("camera_id"), _fixture_root.path_join("video2"))
+	assert_eq(tracker.get_tracking_frame().get("source_id"), _fixture_root.path_join("video2"))
+	assert_false(tracker.get_state().get("detail", {}).get("tracking_ready"))
+
+	tracker.change({
+		"backend": "mediapipe_python",
+		"source": {"kind": "video_file", "path": "res://clips/demo.mp4"},
+		"runtime": {
+			"environment": {
+				"AEROBEAT_CAMERA_ROOT": _fixture_root,
+				"AEROBEAT_CAMERA_PATTERN": "video*"
+			}
+		}
+	})
+	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_ERROR)
+	assert_eq(tracker.get_last_error().get("code"), "unsupported_source_kind")
+	assert_eq(tracker.get_tracking_frame().get("source_kind"), "video_file")
+	assert_eq(tracker.get_tracking_frame().get("source_id"), "res://clips/demo.mp4")
+	assert_eq(tracker.get_preview_descriptor().get("backend"), "mediapipe_python")
+	tracker.free()
+
+func _register_vendor_backend() -> void:
+	CameraTracking.register_backend_factory("mediapipe_python", func(_config: Dictionary):
+		var backend = MediaPipePythonCameraTrackingBackend.new()
+		backend.set_runtime_bridge(MediaPipePythonRuntimeBridge.new())
+		return backend
+	)
+
+func _make_live_config(overrides: Dictionary = {}) -> Dictionary:
+	var config := {
+		"backend": "mediapipe_python",
+		"source": {
+			"kind": "live_camera",
+			"camera_id": ""
+		},
+		"runtime": {
+			"environment": {
+				"AEROBEAT_CAMERA_ROOT": _fixture_root,
+				"AEROBEAT_CAMERA_PATTERN": "video*"
+			}
+		}
+	}
+	_deep_merge(config, overrides)
+	return config
+
+func _write_fixture_camera(name: String) -> void:
+	var file := FileAccess.open(_fixture_root.path_join(name), FileAccess.WRITE)
+	file.store_string("fixture")
+	file.close()
+
+func _deep_merge(base: Dictionary, incoming: Dictionary) -> void:
+	for key in incoming.keys():
+		var incoming_value: Variant = incoming[key]
+		if base.has(key) and base[key] is Dictionary and incoming_value is Dictionary:
+			_deep_merge(base[key], incoming_value)
+		else:
+			base[key] = incoming_value

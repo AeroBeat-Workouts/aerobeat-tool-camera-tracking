@@ -16,10 +16,9 @@ static func detached(config: Dictionary = {}) -> Dictionary:
 
 static func attached(node: Node, config: Dictionary = {}, overrides: Dictionary = {}) -> Dictionary:
 	var descriptor := detached(config)
-	var is_attached := is_instance_valid(node)
-	descriptor["attached"] = is_attached
-	if is_attached:
-		descriptor["surface_path"] = node.get_path() if node.is_inside_tree() else NodePath(node.name)
 	for key in overrides.keys():
 		descriptor[key] = overrides[key]
+	var is_attached := is_instance_valid(node)
+	descriptor["attached"] = is_attached
+	descriptor["surface_path"] = node.get_path() if is_attached and node.is_inside_tree() else NodePath(node.name if is_attached else "")
 	return descriptor

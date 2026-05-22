@@ -8,6 +8,9 @@ var tracking_frame: Dictionary = CameraTrackingFrame.empty()
 var preview_descriptor: Dictionary = CameraTrackingPreview.detached()
 var last_config: Dictionary = CameraTrackingConfig.defaults()
 
+func get_backend_id() -> String:
+	return "fake"
+
 func _init(seed_cameras: Array = []) -> void:
 	cameras = seed_cameras.duplicate(true)
 	preview_descriptor["backend"] = "fake"
