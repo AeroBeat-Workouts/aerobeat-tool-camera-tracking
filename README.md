@@ -1,55 +1,52 @@
-# AeroBeat Tool Template
+# AeroBeat Tool Camera Tracking
 
-This is the official template for creating **Tool** repositories within the current AeroBeat v1 architecture.
+This repo hosts the first **camera-tracking contract shell** for the AeroBeat tool lane.
 
-It should be read against the locked product direction from `aerobeat-docs`:
+The current slice is intentionally a **singleton shell** for a **vendor-agnostic camera-tracking service** rather than a real camera implementation. It establishes the repo-root sharable contracts for lifecycle, config, preview attachment, backend seams, and normalized tracking frames so later MediaPipe or native integrations can plug in without changing the public surface.
 
-- **Primary release target:** PC community first
-- **Official v1 gameplay features:** Boxing and Flow
-- **Official v1 gameplay input:** camera only
-- **Tool stance:** tools should stay workflow-oriented and gameplay-mode agnostic enough to support the current product slice without implying equal-status future gameplay/input/platform scope
-- **Tool lane ownership:** shared tool-side DTOs, progress/result models, and workflow interfaces belong in `aerobeat-tool-core`; concrete authoring/import/export/validation tooling belongs in specific `aerobeat-tool-*` repos
+The shell is aligned to the approved API sketch in `.plans/bootstrap-architecture/CAMERA-TRACKING-API.md`, which defines the current state machine, required signals, config shape, preview ownership model, and normalized tracking-frame payload.
 
-## 📋 Repository Details
+## Current contract scope
 
-- **Type:** Tool template
+- `CameraTracking` singleton shell with lifecycle methods matching the first-pass API
+- standardized top-level state constants (`idle`, `starting`, `running`, `restarting`, `stopping`, `error`)
+- readiness/detail helpers for `backend_ready`, `preview_ready`, `tracking_ready`, and `source_ready`
+- `CameraTrackingConfig` helpers for defaults and normalization
+- `CameraTrackingBackend` interface seam for concrete integrations
+- `CameraTrackingFakeBackend` proving backend for repo-local tests
+- preview attachment contract helpers that preserve the preferred `attach_preview_surface(node)` ownership model
+- normalized tracking-frame stub contract for downstream consumers and tests
+
+## Repository details
+
+- **Type:** AeroBeat tool package
 - **License:** **Mozilla Public License 2.0 (MPL 2.0)**
-- **Dependency contract:**
-  - `aerobeat-tool-core` — required shared tool/workflow contract
-  - additional adjacent lane/core repos only when the specific tool actually consumes them (commonly `aerobeat-content-core` or `aerobeat-asset-core`)
+- **Implementation status:** contract shell only; no real camera backend shipped in this slice
 
 ## GodotEnv development flow
 
-This repo uses the AeroBeat GodotEnv package convention.
+This repo follows the AeroBeat GodotEnv package convention.
 
 - Canonical dev/test manifest: `.testbed/addons.jsonc`
 - Installed dev/test addons: `.testbed/addons/`
 - GodotEnv cache: `.testbed/.addons/`
 - Hidden workbench project: `.testbed/project.godot`
 - Repo-local unit tests: `.testbed/tests/`
+- Repo-root sharable source: `src/`
 
-The repo root remains the package/published boundary for downstream consumers. Day-to-day development, debugging, and validation happen from the hidden `.testbed/` workbench using the pinned OpenClaw toolchain: Godot `4.6.2 stable standard`.
+The repo root remains the package/published boundary for downstream consumers. `.testbed/` is only the proving surface. Do real sharable work at the repo root, not inside `.testbed/addons/` mirrors.
 
 ### Restore dev/test dependencies
 
 From the repo root:
 
 ```bash
+/home/derrick/.openclaw/workspace/scripts/godotenv-sync
 cd .testbed
 godotenv addons install
 ```
 
-That restores this repo's current dev/test manifest into `.testbed/addons/`. Canonically, Tool templates should keep the baseline manifest narrow: `aerobeat-tool-core` plus test-only tooling.
-
-### Open the workbench
-
-From the repo root:
-
-```bash
-godot --editor --path .testbed
-```
-
-Use this `.testbed/` project as the canonical direct-development and bugfinding surface for tool-template work.
+Use the sync helper first if the local toolchain or linked workspace packages need refreshing.
 
 ### Import smoke check
 
@@ -59,7 +56,7 @@ From the repo root:
 godot --headless --path .testbed --import
 ```
 
-### Run unit tests
+### Run repo-local tests
 
 From the repo root:
 
@@ -70,11 +67,8 @@ godot --headless --path .testbed --script addons/gut/gut_cmdln.gd \
   -gexit
 ```
 
-### Validation notes
+## Notes for later slices
 
-- `.testbed/addons.jsonc` is the committed dev/test dependency contract.
-- The canonical template manifest for this repo is `aerobeat-tool-core` + `gut`.
-- `aerobeat-tool-core` is currently pinned to `main` intentionally because the repo does not yet have release tags; switch to a tag once tagged releases exist.
-- If a concrete tool needs adjacent lane repos, add them intentionally rather than restoring a universal `aerobeat-core` baseline.
-- Repo-local unit tests live under `.testbed/tests/` and currently validate repo metadata plus the template stub contract.
-- The current package shape is consumed from the repo root (`subfolder: "/"`) for downstream installs.
+- real backend selection/factories are intentionally deferred
+- replay/video-file integration remains part of the public source contract but not yet implemented
+- preview descriptors and tracking frames are stabilized now so downstream consumers do not need to guess payload shape per backend
