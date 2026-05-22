@@ -38,6 +38,9 @@ jobs:
         working-directory: ./.testbed
         run: godotenv addons install
 
+      - name: 🔌 Prepare local addon overlay
+        run: ./scripts/prepare_testbed.sh
+
       - name: 🧭 Import testbed project
         run: godot --headless --path .testbed --import
 

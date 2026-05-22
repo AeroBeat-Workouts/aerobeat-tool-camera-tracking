@@ -18,10 +18,6 @@ Thumbs.db
 # GodotEnv package workbench
 .testbed/addons/*
 !.testbed/addons/.editorconfig
-!.testbed/addons/aerobeat-tool-camera-tracking/
-.testbed/addons/aerobeat-tool-camera-tracking/*
-!.testbed/addons/aerobeat-tool-camera-tracking/src/
-!.testbed/addons/aerobeat-tool-camera-tracking/src/*.gd
 .testbed/.addons/
 
 # Beads / Dolt files (added by bd init)
