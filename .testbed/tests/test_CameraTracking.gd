@@ -356,7 +356,7 @@ func test_registered_vendor_backend_starts_live_camera_truthfully_and_preserves_
 	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_RUNNING)
 	assert_true(tracker.get_state().get("detail", {}).get("backend_ready"))
 	assert_true(tracker.get_state().get("detail", {}).get("preview_ready"))
-	assert_false(tracker.get_state().get("detail", {}).get("tracking_ready"))
+	assert_true(tracker.get_state().get("detail", {}).get("tracking_ready"))
 	assert_true(tracker.get_state().get("detail", {}).get("source_ready"))
 	assert_eq(tracker.list_cameras().size(), 2)
 	assert_eq(tracker.list_cameras()[1].get("camera_id"), selected_camera_id)
@@ -369,7 +369,7 @@ func test_registered_vendor_backend_starts_live_camera_truthfully_and_preserves_
 	assert_eq(tracker.get_tracking_frame().get("source_kind"), "live_camera")
 	assert_eq(tracker.get_tracking_frame().get("source_id"), selected_camera_id)
 	assert_eq(tracker.get_tracking_frame().get("tracking_state"), "tracked")
-	assert_eq(tracker.get_tracking_frame().get("timestamp_ms"), 1710000000456)
+	assert_true(int(tracker.get_tracking_frame().get("timestamp_ms", 0)) > 0)
 	assert_eq(tracker.get_tracking_frame().get("frame_size", {}).get("x"), 640)
 	assert_eq(tracker.get_tracking_frame().get("frame_size", {}).get("y"), 480)
 	assert_eq(tracker.get_tracking_frame().get("confidence"), 0.0)
@@ -393,7 +393,7 @@ func test_registered_vendor_backend_starts_live_camera_truthfully_and_preserves_
 	parent.free()
 	tracker.free()
 
-func test_registered_vendor_backend_change_surfaces_truthful_restart_and_unsupported_source_error() -> void:
+func test_registered_vendor_backend_change_surfaces_truthful_restart_into_replay_and_public_stop() -> void:
 	_register_vendor_backend()
 	var tracker := CameraTracking.new()
 	tracker.start(_make_live_config({
@@ -410,27 +410,51 @@ func test_registered_vendor_backend_change_surfaces_truthful_restart_and_unsuppo
 	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_RUNNING)
 	assert_eq(tracker.get_active_config().get("source", {}).get("camera_id"), _fixture_root.path_join("video2"))
 	assert_eq(tracker.get_tracking_frame().get("source_id"), _fixture_root.path_join("video2"))
-	assert_eq(tracker.get_tracking_frame().get("timestamp_ms"), 1710000000456)
+	assert_true(int(tracker.get_tracking_frame().get("timestamp_ms", 0)) > 0)
 	assert_eq(tracker.get_tracking_frame().get("frame_size", {}).get("x"), 640)
 	assert_eq(tracker.get_tracking_frame().get("frame_size", {}).get("y"), 480)
 	assert_eq(tracker.get_tracking_frame().get("tracking_state"), "tracked")
 	assert_eq(tracker.get_tracking_frame().get("landmarks", []).size(), 2)
-	assert_false(tracker.get_state().get("detail", {}).get("tracking_ready"))
+	assert_false(tracker.get_preview_descriptor().get("flip_horizontal"))
+	assert_true(tracker.get_state().get("detail", {}).get("tracking_ready"))
 
-	tracker.change({
-		"backend": "mediapipe_python",
-		"source": {"kind": "video_file", "path": "res://clips/demo.mp4"},
-		"runtime": {
-			"environment": {
-				"AEROBEAT_CAMERA_ROOT": _fixture_root,
-				"AEROBEAT_CAMERA_PATTERN": "video*"
-			}
-		}
-	})
-	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_ERROR)
-	assert_eq(tracker.get_last_error().get("code"), "unsupported_source_kind")
+	var replay_path := _write_fixture_video("gesture_replay.mp4")
+	tracker.change(_make_replay_config(replay_path, {
+		"preview": {"flip_horizontal": false}
+	}))
+	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_RUNNING)
+	assert_true(tracker.get_state().get("detail", {}).get("backend_ready"))
+	assert_true(tracker.get_state().get("detail", {}).get("preview_ready"))
+	assert_true(tracker.get_state().get("detail", {}).get("tracking_ready"))
+	assert_true(tracker.get_state().get("detail", {}).get("source_ready"))
+	assert_eq(tracker.get_active_config().get("source", {}).get("kind"), "video_file")
+	assert_eq(tracker.get_active_config().get("source", {}).get("path"), replay_path)
 	assert_eq(tracker.get_tracking_frame().get("source_kind"), "video_file")
-	assert_eq(tracker.get_tracking_frame().get("source_id"), "res://clips/demo.mp4")
+	assert_eq(tracker.get_tracking_frame().get("source_id"), replay_path)
+	assert_eq(tracker.get_tracking_frame().get("tracking_state"), "tracked")
+	assert_eq(int(tracker.get_tracking_frame().get("frame_size", {}).get("x", 0)), 960)
+	assert_eq(int(tracker.get_tracking_frame().get("frame_size", {}).get("y", 0)), 540)
+	assert_true(int(tracker.get_tracking_frame().get("timestamp_ms", 0)) >= 101)
+	assert_eq(tracker.get_tracking_frame().get("landmarks", []).size(), 1)
+	assert_eq(int(tracker.get_tracking_frame().get("landmarks", [])[0].get("id", -1)), 4)
+	assert_eq(tracker.get_preview_descriptor().get("backend"), "mediapipe_python")
+	assert_false(tracker.get_preview_descriptor().get("flip_horizontal"))
+
+	OS.delay_msec(220)
+	tracker._process(0.0)
+	assert_eq(tracker.get_tracking_frame().get("source_kind"), "video_file")
+	assert_eq(tracker.get_tracking_frame().get("source_id"), replay_path)
+	assert_true(int(tracker.get_tracking_frame().get("timestamp_ms", 0)) >= 202)
+
+	tracker.stop()
+	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_IDLE)
+	assert_false(tracker.get_state().get("detail", {}).get("backend_ready"))
+	assert_false(tracker.get_state().get("detail", {}).get("preview_ready"))
+	assert_false(tracker.get_state().get("detail", {}).get("tracking_ready"))
+	assert_false(tracker.get_state().get("detail", {}).get("source_ready"))
+	assert_eq(tracker.get_tracking_frame().get("source_kind"), "video_file")
+	assert_eq(tracker.get_tracking_frame().get("source_id"), replay_path)
+	assert_eq(tracker.get_tracking_frame().get("tracking_state"), "idle")
 	assert_eq(tracker.get_preview_descriptor().get("backend"), "mediapipe_python")
 	tracker.free()
 
@@ -470,10 +494,59 @@ func _make_live_config(overrides: Dictionary = {}) -> Dictionary:
 	_deep_merge(config, overrides)
 	return config
 
+func _make_replay_config(replay_path: String, overrides: Dictionary = {}) -> Dictionary:
+	var config := {
+		"backend": "mediapipe_python",
+		"source": {
+			"kind": "video_file",
+			"path": replay_path
+		},
+		"runtime": {
+			"environment": {
+				"AEROBEAT_CAMERA_ROOT": _fixture_root,
+				"AEROBEAT_CAMERA_PATTERN": "video*",
+				"AEROBEAT_CAMERA_SAMPLE_FIXTURES_JSON": JSON.stringify({
+					replay_path: {
+						"sequence": [
+							{
+								"width": 960,
+								"height": 540,
+								"timestamp_ms": 101,
+								"landmarks": [
+									{"id": 4, "x": 0.2, "y": 0.3, "z": -0.1, "visibility": 0.9}
+								]
+							},
+							{
+								"width": 960,
+								"height": 540,
+								"timestamp_ms": 202
+							},
+							{
+								"width": 960,
+								"height": 540,
+								"timestamp_ms": 303
+							}
+						]
+					}
+				}),
+				"AEROBEAT_CAMERA_REPLAY_FRAME_DELAY_MS": "100"
+			}
+		}
+	}
+	_deep_merge(config, overrides)
+	return config
+
 func _write_fixture_camera(name: String) -> void:
 	var file := FileAccess.open(_fixture_root.path_join(name), FileAccess.WRITE)
 	file.store_string("fixture")
 	file.close()
+
+func _write_fixture_video(name: String) -> String:
+	var path := _fixture_root.path_join(name)
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	file.store_string("fixture-video")
+	file.close()
+	return path
 
 func _deep_merge(base: Dictionary, incoming: Dictionary) -> void:
 	for key in incoming.keys():

@@ -314,6 +314,10 @@ func _sync_process_state() -> void:
 	set_process(_backend != null and _state == STATE_RUNNING and is_inside_tree())
 
 func _on_backend_state_changed(state: String, detail: Dictionary) -> void:
+	if _backend != null:
+		_tracking_frame = CameraTrackingFrame.normalize(_backend.get_tracking_frame(), _active_config)
+		_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor())
+		_last_cameras = _backend.list_cameras().duplicate(true)
 	if state != STATE_ERROR:
 		_last_error = {}
 	_set_state(state, detail)
