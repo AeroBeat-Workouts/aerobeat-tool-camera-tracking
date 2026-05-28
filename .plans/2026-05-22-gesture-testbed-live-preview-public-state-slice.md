@@ -105,9 +105,30 @@ Validation run in this repo:
 **Files Created/Deleted/Modified:**
 - none required unless a minimal QA artifact is necessary
 
-**Status:** ⏳ Pending
+**Status:** ✅ Complete
 
-**Results:** Pending.
+**Results:** Claimed `atct-0fu` after verifying the bead was unblocked by closed dependency `atct-dyf`, then independently QA’d commit `49ddb53` (`Harden shared live preview attachment semantics`). QA confirms the live preview attachment semantics are now stack-safe inside the tool-owned public service: `src/CameraTracking.gd` replaced the old single `_attached_preview_surface` slot with `_attached_preview_surfaces`, prunes freed surfaces, dedupes re-attaches, keeps the newest surface active, and `detach_preview_surface()` restores the previous attachment instead of permanently stomping it. `src/CameraTrackingPreview.gd` truthfully exposes `attached_surface_count`, and repo-local tests prove detached/single/stacked/vendor-backed cases.
+
+Targeted borrowed-consumer parity stayed green in the proving path: the vendor-backed live-camera test attaches a proving-harness `PreviewSlot`, temporarily borrows the session with `InsetPreviewSlot`, observes `surface_path = InsetPreviewSlot` with `attached_surface_count = 2`, then detaches and sees `surface_path = PreviewSlot` with `attached_surface_count = 1`. Public preview/state truth stayed coherent alongside earlier live/public-state slices: running state/detail readiness, `get_active_config()`, normalized tracking frames, backend identity, and preview descriptor reads all remained truthful in repo-local validation.
+
+Scope/ownership checks also passed. The committed diff only touched repo-root tool-owned files plus the repo-local plan/tests/README: `src/CameraTracking.gd`, `src/CameraTrackingPreview.gd`, `.testbed/tests/test_CameraTracking.gd`, `README.md`, and this plan. No addon mirrors were edited as owned source, and no replay implementation drift happened; the only `video_file` / replay mentions in this repo-local QA pass were existing honest unsupported-source checks and unrelated vendor-plan/reference files under `.testbed`.
+
+Validation run during QA:
+- `bd ready --json`
+- `bd show atct-0fu --json`
+- `bd update atct-0fu --status in_progress --json`
+- `git status --short`
+- `git diff --name-only HEAD~1..HEAD`
+- `git log --oneline -1`
+- `git show --stat --oneline --decorate=short 49ddb53`
+- `git show --unified=40 --no-ext-diff 49ddb53 -- src/CameraTracking.gd src/CameraTrackingPreview.gd .testbed/tests/test_CameraTracking.gd README.md .plans/2026-05-22-gesture-testbed-live-preview-public-state-slice.md`
+- `./scripts/prepare_testbed.sh`
+- `godot --headless --path .testbed --import`
+- `godot --headless --path .testbed --script addons/gut/gut_cmdln.gd -gtest=res://tests/test_CameraTracking.gd -gexit` ✅ (`12/12` passed, `126` asserts)
+- `godot --headless --path .testbed --script addons/gut/gut_cmdln.gd -gdir=res://tests -ginclude_subdirs -gexit` ✅ (`14/14` passed, `135` asserts)
+- `grep -RIn "attached_surface_count\|attach_preview_surface\|detach_preview_surface\|video_file\|replay\|PreviewSlot\|InsetPreviewSlot" src .testbed README.md`
+
+QA verdict: pass. No functional gaps found in this slice; leave auditor bead `atct-c8n` open for independent audit.
 
 ---
 
@@ -125,9 +146,30 @@ Validation run in this repo:
 **Files Created/Deleted/Modified:**
 - none required unless a minimal audit artifact is necessary
 
-**Status:** ⏳ Pending
+**Status:** ✅ Complete
 
-**Results:** Pending.
+**Results:** Claimed `atct-c8n` after verifying the dependency on QA bead `atct-0fu` was closed, then independently audited commit `49ddb53` (`Harden shared live preview attachment semantics`) against the plan, the repo diff, coder notes, and QA notes. Audit passes for the planned live-only scope.
+
+Implementation truth check:
+- `src/CameraTracking.gd:127-146` now treats preview attachments as a stack, not a single stompable slot: null/invalid nodes are ignored, duplicate re-attaches are deduped then moved to the top, and `detach_preview_surface()` pops only the newest attachment.
+- `src/CameraTracking.gd:236-266` composes public preview state from the currently active top-of-stack surface while pruning freed nodes first, so public preview reads stay honest instead of advertising dead/restored attachments.
+- `src/CameraTrackingPreview.gd:4-25` exposes `attached_surface_count` in both detached and attached descriptors, which makes the public preview descriptor truthful about whether the active preview is the only attachment or a borrowed top layer over an older one.
+
+Borrowed-consumer / downstream-path reality check:
+- `.testbed/tests/test_CameraTracking.gd:209-235` proves stack restoration in the abstract tool contract.
+- `.testbed/tests/test_CameraTracking.gd:340-391` proves the real vendor-backed live path keeps the original proving-harness `PreviewSlot`, temporarily activates `InsetPreviewSlot` with `attached_surface_count = 2`, then restores `PreviewSlot` with count `1` after detach. That is real enough for the downstream live gesture-testbed inset path described in `REF-03`.
+- `REF-03` still keeps live/replay ownership and session borrowing on the consumer side; this repo only hardened the shared preview/public-state seam it owns.
+
+Scope/ownership audit:
+- `git diff --name-only HEAD~1..HEAD` shows only repo-owned files changed: `src/CameraTracking.gd`, `src/CameraTrackingPreview.gd`, `.testbed/tests/test_CameraTracking.gd`, `README.md`, and this plan.
+- No addon-mirror source was treated as owned source, and no replay implementation drift occurred. Replay/video-file mentions remain existing honest unsupported-source behavior and documentation only.
+- Public state/detail ownership remained in this repo; there was no drift into downstream consumer code for this slice.
+
+Independent validation rerun during audit:
+- `./scripts/prepare_testbed.sh && godot --headless --path .testbed --import && godot --headless --path .testbed --script addons/gut/gut_cmdln.gd -gtest=res://tests/test_CameraTracking.gd -gexit` ✅ (`12/12` passed, `126` asserts)
+- `godot --headless --path .testbed --script addons/gut/gut_cmdln.gd -gdir=res://tests -ginclude_subdirs -gexit` ✅ (`14/14` passed, `135` asserts)
+
+Audit verdict: pass. The live preview/public-state parity slice is genuinely complete for its planned scope, so bead `atct-c8n` can be closed.
 
 ---
 
@@ -143,16 +185,16 @@ Cross-repo coordination note: this live tool slice should begin after the input 
 
 ## Final Results
 
-**Status:** ⚠️ Partial
+**Status:** ✅ Complete
 
-**What We Built:** Implemented the coder slice for shared live-session preview/public-state semantics in the tool-owned `CameraTracking` service. Preview attachment is now stack-safe for shared sessions, the preview descriptor exposes `attached_surface_count`, and repo-local tests prove that the active preview surface can temporarily switch for an inset-style consumer and then restore the prior proving-harness attachment.
+**What We Built:** Completed the live-only gesture-testbed preview/public-state parity slice in the tool-owned `CameraTracking` service. Shared live preview attachment is now stack-safe, the public preview descriptor truthfully reports `attached_surface_count`, and the proving-backed live path shows that a borrowed inset-style consumer can temporarily take the active preview surface and then restore the previous proving-harness attachment without losing truthful public state.
 
-**Reference Check:** `REF-04`, `REF-05`, `REF-06`, `REF-07`, and `REF-08` are satisfied for the planned coder scope. The slice preserved proving-harness preview behavior while strengthening the tool-owned public preview truth needed for shared live-session reuse. Replay remains intentionally untouched.
+**Reference Check:** `REF-03`, `REF-04`, `REF-05`, `REF-06`, `REF-07`, and `REF-08` are satisfied for the planned scope. The implementation stayed inside repo-owned preview/public-state semantics, preserved the proving-harness lane, exposed only the minimal additive public preview fact needed for shared live reuse, and did not broaden into replay. `REF-01` and `REF-02` remain aligned at the cross-repo coordination level.
 
 **Commits:**
-- Pending coder commit.
+- `49ddb53` - Harden shared live preview attachment semantics
 
-**Lessons Learned:** The honest live gap in this repo was not another runtime boot path. It was preview ownership semantics under shared-session reuse: a single-slot attach model is too brittle once more than one consumer can temporarily borrow the same live service.
+**Lessons Learned:** The real live parity gap was attachment ownership semantics, not backend startup. Once a downstream lane can borrow the same live service, a truthful stack model plus explicit public attachment count is the narrow seam that keeps preview ownership honest without pushing state/detail ownership into consumer repos.
 
 ---
 

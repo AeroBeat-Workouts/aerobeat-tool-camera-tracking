@@ -91,11 +91,32 @@ This slice keeps that boundary strict. `aerobeat-tool-camera-tracking` should ac
 - validation-only use of repo-local proving surfaces
 
 **Files Created/Deleted/Modified:**
-- none required unless a minimal QA artifact is necessary
+- `/workspace/projects/aerobeat/aerobeat-tool-camera-tracking/.plans/2026-05-22-gesture-testbed-replay-public-service-slice.md`
 
-**Status:** ⏳ Pending
+**Status:** ✅ Complete
 
-**Results:** Pending.
+**Results:** Claimed `atct-a7h` after verifying dependency bead `atct-7q9` was closed, then independently QA’d commit `6c5c091` (`Surface replay through CameraTracking service`). QA confirms the public `CameraTracking` seam now truthfully surfaces replay / `video_file` through repo-owned lifecycle/state/detail/frame/preview/source coordination instead of stopping at the vendor boundary.
+
+Implementation truth check during QA:
+- `src/CameraTracking.gd` now refreshes cached public frame/preview/camera surfaces inside `_on_backend_state_changed()`, so stop/idle transitions no longer leave stale live or replay public reads behind.
+- `.testbed/tests/test_CameraTracking.gd` replaced the old unsupported replay assumption with `test_registered_vendor_backend_change_surfaces_truthful_restart_into_replay_and_public_stop()`, which drives live → live-change → replay/video-file → stop through public `CameraTracking` APIs and asserts truthful `source.kind`, `source_id`, preview/backend facts, readiness flags, replay timestamps, and idle settlement.
+- Scope stayed tool-owned: the commit only touched repo-root sources/tests/docs/plan files (`src/CameraTracking.gd`, `.testbed/tests/test_CameraTracking.gd`, `README.md`, and this plan). No addon mirrors were edited as owned source, and public lifecycle/state/detail/preview/source coordination remained in `CameraTracking`.
+
+Validation run during QA:
+- `bd show atct-a7h --json`
+- `bd update atct-a7h --status in_progress --json`
+- `git status --short`
+- `git log --oneline --decorate -n 5`
+- `git diff --stat HEAD~1..HEAD`
+- `git diff --name-only HEAD~1..HEAD`
+- `git diff -- .plans/2026-05-22-gesture-testbed-live-preview-public-state-slice.md`
+- `./scripts/prepare_testbed.sh`
+- `godot --headless --path .testbed --import`
+- `godot --headless --path .testbed --script addons/gut/gut_cmdln.gd -gtest=res://tests/test_CameraTracking.gd -gexit` ✅ (`12/12` passed, `151` asserts)
+- `godot --headless --path .testbed --script addons/gut/gut_cmdln.gd -gdir=res://tests -ginclude_subdirs -gexit` ✅ (`14/14` passed, `160` asserts)
+- `grep -RIn "video_file\|replay\|source_kind\|source_id\|tracking_ready\|preview_ready\|backend_ready\|source_ready\|_on_backend_state_changed\|_compose_preview_descriptor" src .testbed/tests README.md`
+
+QA verdict: pass. No repo-local functional gaps found for this replay public-service slice; auditor bead `atct-mv8` should remain open for independent audit.
 
 ---
 
@@ -113,9 +134,32 @@ This slice keeps that boundary strict. `aerobeat-tool-camera-tracking` should ac
 **Files Created/Deleted/Modified:**
 - none required unless a minimal audit artifact is necessary
 
-**Status:** ⏳ Pending
+**Status:** ✅ Complete
 
-**Results:** Pending.
+**Results:** Claimed `atct-mv8` after verifying the dependency on QA bead `atct-a7h` was closed, then independently audited commit `6c5c091` (`Surface replay through CameraTracking service`) against the plan, repo diff, coder notes, and QA notes. Audit passes for the planned replay public-service scope.
+
+Implementation truth check:
+- `src/CameraTracking.gd:316-323` now refreshes `_tracking_frame`, `_preview_descriptor`, and `_last_cameras` inside `_on_backend_state_changed()`, so public service reads no longer stay stale after backend stop/idle transitions.
+- `src/CameraTrackingFrame.gd:8-18` already defines public replay identity truthfully (`source_kind = video_file`, `source_id = path`), and the audited slice now exercises that path through the public `CameraTracking` service instead of stopping at an unsupported-source assumption.
+- `.testbed/tests/test_CameraTracking.gd:396-458` replaces the old unsupported replay expectation with `test_registered_vendor_backend_change_surfaces_truthful_restart_into_replay_and_public_stop()`, which drives live → live-change → replay/video-file → stop through the public API and asserts truthful `active_config`, `source_kind`, `source_id`, preview/backend facts, replay timestamps, readiness flags, and idle settlement.
+
+Scope/ownership audit:
+- `git diff --name-only 6c5c091^..6c5c091` shows only repo-owned files changed: `src/CameraTracking.gd`, `.testbed/tests/test_CameraTracking.gd`, `README.md`, and this plan.
+- Public lifecycle/state/detail/preview/source coordination remained owned by `src/CameraTracking.gd`; there was no drift into addon mirrors, downstream consumer repos, or vendor raw-runtime ownership.
+- README scope text now truthfully documents replay/video-file flowing through the same public service seam, but no new public schema beyond the planned minimal replay slice was introduced.
+
+Independent validation rerun during audit:
+- `./scripts/prepare_testbed.sh` ✅
+- `godot --headless --path .testbed --import` ✅
+- `godot --headless --path .testbed --script addons/gut/gut_cmdln.gd -gtest=res://tests/test_CameraTracking.gd -gexit` ✅ (`12/12` passed, `151` asserts)
+- `godot --headless --path .testbed --script addons/gut/gut_cmdln.gd -gdir=res://tests -ginclude_subdirs -gexit` ✅ (`14/14` passed, `160` asserts)
+- `grep -RIn "video_file\|unsupported_source_kind\|_on_backend_state_changed\|tracking_ready\|source_id\|source_kind\|preview_descriptor\|get_active_config\|replay" src .testbed/tests README.md` ✅
+
+Unstaged residue check:
+- `git diff -- .plans/2026-05-22-gesture-testbed-live-preview-public-state-slice.md` shows substantive QA/audit/final-results documentation for the already-complete live preview slice, not throwaway scratch noise.
+- That residue does not invalidate this replay audit, but it should be committed (or consciously discarded) before treating the repo as clean for continuation, because it is durable plan state for completed work and is the only unrelated dirty file in the worktree.
+
+Audit verdict: pass. The replay public-service slice is genuinely complete for its planned scope, so bead `atct-mv8` can be closed.
 
 ---
 
@@ -131,16 +175,16 @@ Cross-repo coordination note: this replay tool slice should begin after vendor r
 
 ## Final Results
 
-**Status:** ⚠️ Partial
+**Status:** ✅ Complete
 
-**What We Built:** Coder slice complete: replay/video-file sessions now surface through the repo-owned `CameraTracking` service/testbed seam with truthful source/preview/frame/state behavior for the narrow gesture-testbed path, and stop-time public reads no longer retain stale tracked frames after backend idle transitions.
+**What We Built:** Completed the gesture-testbed replay public-service parity slice in the tool-owned `CameraTracking` service. Replay/video-file sessions now flow through the same public lifecycle/state/detail/frame/preview/source seam as live mode at the minimal truthful scope, and stop/idle transitions now refresh cached public surfaces so stale frames/previews/camera lists do not linger after replay stops.
 
-**Reference Check:** `REF-03`, `REF-04`, `REF-05`, `REF-06`, `REF-07`, and `REF-08` are now exercised at the coder level for the planned scope. Replay no longer stops at the vendor boundary; it now crosses the tool-owned public-service boundary without broadening into downstream input-addon compatibility work.
+**Reference Check:** `REF-03`, `REF-04`, `REF-05`, `REF-06`, `REF-07`, and `REF-08` are satisfied for the planned scope. Replay now crosses the tool-owned public-service boundary truthfully, repo-local proving covers replay start/change/stop expectations instead of the old unsupported-source assumption, and the slice did not broaden into downstream input-addon compatibility or vendor raw-runtime ownership. `REF-01` and `REF-02` remain aligned at the cross-repo coordination level.
 
 **Commits:**
-- Pending coder commit.
+- `6c5c091` - Surface replay through CameraTracking service
 
-**Lessons Learned:** The replay public-service problem was mostly about keeping the tool-owned cached public surfaces truthful when backend state changes, plus updating repo-local proving to stop assuming legacy `video_file` rejection once the vendor lane turned green.
+**Lessons Learned:** The replay parity gap was not a new public schema problem; it was cache truth and proving ownership. Once the vendor lane could replay truthfully, this repo only needed to refresh its cached public surfaces on backend state changes and move replay expectations into repo-owned `CameraTracking` tests instead of preserving an outdated rejection assumption.
 
 ---
 
