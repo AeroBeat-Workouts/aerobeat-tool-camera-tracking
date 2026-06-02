@@ -40,7 +40,7 @@ This repo follows the AeroBeat GodotEnv package convention.
 
 The repo root remains the package/published boundary for downstream consumers. `.testbed/` is only the proving surface. Do real sharable work at the repo root, not inside `.testbed/addons/` mirrors.
 
-For repo-local proving, `./scripts/prepare_testbed.sh` creates untracked local symlinks under `.testbed/addons/aerobeat-tool-camera-tracking/src/` so the testbed resolves the repo's live `src/` contract files without duplicating `class_name` scripts inside the hidden addon mirror. The committed truth remains repo-root `src/`; the addon-path symlinks are only local proving glue.
+GodotEnv now mounts this repo into `.testbed/addons/aerobeat-tool-camera-tracking` as the managed symlink declared in `.testbed/addons.jsonc`, so repo-local proving reads the live repo-root `src/` tree directly. Keep sharable source at the repo root; do not add addon-mirror glue inside `.testbed/addons/`.
 
 ### Restore dev/test dependencies
 
@@ -51,10 +51,9 @@ From the repo root:
 cd .testbed
 godotenv addons install
 cd ..
-./scripts/prepare_testbed.sh
 ```
 
-Use the sync helper first if the local toolchain or linked workspace packages need refreshing.
+Use the sync helper first if the local toolchain or linked workspace packages need refreshing. `godotenv addons install` restores the managed symlink for this repo automatically via `.testbed/addons.jsonc`; no extra prepare step is required.
 
 ### Import smoke check
 
