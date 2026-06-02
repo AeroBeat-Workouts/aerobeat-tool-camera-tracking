@@ -1,36 +1,30 @@
 {
   "$schema": "https://chickensoft.games/schemas/addons.schema.json",
   "addons": {
-    // Install this repo into the hidden workbench the same way a consumer does.
     "aerobeat-tool-camera-tracking": {
       "url": "..",
       "source": "symlink",
       "subfolder": "/"
     },
-    // Tool-template bootstrap pins the shared tool/workflow contract.
-    // `main` is intentional until aerobeat-tool-core starts tagging releases.
     "aerobeat-tool-core": {
-      "url": "git@github.com:AeroBeat-Workouts/aerobeat-tool-core.git",
-      "checkout": "main",
-      "subfolder": "/"
+      "url": "../../aerobeat-tool-core",
+      "subfolder": "/",
+      "source": "symlink"
     },
-    // Truthful live-camera proving installs the real MediaPipe Python vendor package,
-    // but repo-root ownership stays in src/ here and in the vendor repo there.
     "aerobeat-vendor-mediapipe-python": {
-      "url": "git@github.com:AeroBeat-Workouts/aerobeat-vendor-mediapipe-python.git",
-      "checkout": "main",
-      "subfolder": "/"
+      "url": "../../aerobeat-vendor-mediapipe-python",
+      "subfolder": "/",
+      "source": "symlink"
     },
     "aerobeat-tool-headless-manager": {
       "url": "../../aerobeat-tool-headless-manager",
       "subfolder": "/",
       "source": "symlink"
     },
-    // GUT drives the repo-local test suite inside the hidden testbed/workbench.
-    "gut": {
-      "url": "git@github.com:bitwes/Gut.git",
-      "checkout": "main",
-      "subfolder": "/addons/gut"
+    "aerobeat-vendor-godot-unit-test": {
+      "url": "../../aerobeat-vendor-godot-unit-test",
+      "subfolder": "/",
+      "source": "symlink"
     }
   }
 }
