@@ -11,9 +11,13 @@ static func empty(config: Dictionary = {}) -> Dictionary:
 	var source_id := source_path if source_kind == "video_file" else camera_id
 	if source_id == "":
 		source_id = camera_id if camera_id != "" else source_path
+	var backend_request := CameraTrackingConfig.normalize_requested_backend(normalized.get("backend", CameraTrackingConfig.DEFAULT_BACKEND))
+	var backend_impl := CameraTrackingConfig.resolve_backend_id(backend_request)
 	return {
 		"timestamp_ms": 0,
-		"backend": normalized.get("backend", CameraTrackingConfig.DEFAULT_BACKEND),
+		"backend": backend_impl,
+		"backend_request": backend_request,
+		"backend_impl": backend_impl,
 		"source_kind": source_kind,
 		"source_id": source_id,
 		"tracking_state": "idle",
@@ -39,7 +43,13 @@ static func normalize(frame: Dictionary, config: Dictionary = {}) -> Dictionary:
 	if frame.has("timestamp_ms"):
 		normalized["timestamp_ms"] = int(frame.get("timestamp_ms", 0))
 	if frame.has("backend"):
-		normalized["backend"] = str(frame.get("backend", normalized.get("backend", CameraTrackingConfig.DEFAULT_BACKEND)))
+		normalized["backend"] = str(frame.get("backend", normalized.get("backend", CameraTrackingConfig.DEFAULT_BACKEND_IMPL)))
+	if frame.has("backend_request"):
+		normalized["backend_request"] = CameraTrackingConfig.normalize_requested_backend(frame.get("backend_request", normalized.get("backend_request", CameraTrackingConfig.DEFAULT_BACKEND)))
+	if frame.has("backend_impl"):
+		normalized["backend_impl"] = str(frame.get("backend_impl", normalized.get("backend_impl", CameraTrackingConfig.DEFAULT_BACKEND_IMPL)))
+	if not frame.has("backend_impl") and frame.has("backend"):
+		normalized["backend_impl"] = str(normalized.get("backend", CameraTrackingConfig.DEFAULT_BACKEND_IMPL))
 	if frame.has("source_kind"):
 		normalized["source_kind"] = str(frame.get("source_kind", normalized.get("source_kind", CameraTrackingConfig.DEFAULT_SOURCE_KIND)))
 	if frame.has("source_id"):

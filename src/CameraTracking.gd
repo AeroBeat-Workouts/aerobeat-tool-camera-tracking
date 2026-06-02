@@ -47,6 +47,7 @@ var _last_error: Dictionary = {}
 var _backend: CameraTrackingBackend = null
 var _attached_preview_surfaces: Array = []
 var _backend_resolution_mode: String = ""
+var _requested_backend_id: String = ""
 var _resolved_backend_id: String = ""
 var _last_cameras: Array = []
 
@@ -69,7 +70,8 @@ func set_backend(backend: CameraTrackingBackend, backend_id: String = "") -> voi
 	var normalized_backend_id := _normalize_backend_id(backend_id)
 	if normalized_backend_id == "" and backend != null:
 		normalized_backend_id = _normalize_backend_id(backend.get_backend_id())
-	_set_backend_internal(backend, normalized_backend_id, _BACKEND_RESOLUTION_MANUAL)
+	var requested_backend_id := CameraTrackingConfig.normalize_requested_backend(normalized_backend_id)
+	_set_backend_internal(backend, normalized_backend_id, _BACKEND_RESOLUTION_MANUAL, requested_backend_id)
 
 func start(config: Dictionary = {}) -> void:
 	_active_config = CameraTrackingConfig.normalize(config)
@@ -152,38 +154,47 @@ func is_running() -> bool:
 	return _state == STATE_RUNNING
 
 func _ensure_backend_for_config(config: Dictionary) -> bool:
-	var requested_backend_id := _normalize_backend_id(config.get("backend", CameraTrackingConfig.DEFAULT_BACKEND))
+	var requested_backend_id := CameraTrackingConfig.normalize_requested_backend(config.get("backend", CameraTrackingConfig.DEFAULT_BACKEND))
+	var resolved_backend_id := CameraTrackingConfig.resolve_backend_id(requested_backend_id)
 	if _backend != null:
 		if _backend_resolution_mode == _BACKEND_RESOLUTION_MANUAL:
+			_requested_backend_id = requested_backend_id
 			return true
-		if _resolved_backend_id == requested_backend_id:
+		if _resolved_backend_id == resolved_backend_id:
+			_requested_backend_id = requested_backend_id
 			return true
-	if CameraTrackingBackendRegistry.has_factory(requested_backend_id) == false:
+	if CameraTrackingBackendRegistry.has_factory(resolved_backend_id) == false:
 		_fail_with({
 			"code": "backend_unregistered",
-			"message": "No camera tracking backend factory is registered for '%s'" % requested_backend_id,
-			"backend": requested_backend_id,
+			"message": "No camera tracking backend factory is registered for '%s'" % resolved_backend_id,
+			"backend": resolved_backend_id,
+			"backend_request": requested_backend_id,
+			"backend_impl": resolved_backend_id,
 			"registered_backends": CameraTrackingBackendRegistry.registered_backend_ids()
 		})
 		return false
-	var resolved_backend := CameraTrackingBackendRegistry.create_backend(requested_backend_id, config)
+	var resolved_backend := CameraTrackingBackendRegistry.create_backend(resolved_backend_id, config)
 	if resolved_backend == null:
 		_fail_with({
 			"code": "backend_factory_failed",
-			"message": "Camera tracking backend factory for '%s' did not return a usable backend" % requested_backend_id,
-			"backend": requested_backend_id
+			"message": "Camera tracking backend factory for '%s' did not return a usable backend" % resolved_backend_id,
+			"backend": resolved_backend_id,
+			"backend_request": requested_backend_id,
+			"backend_impl": resolved_backend_id
 		})
 		return false
-	_set_backend_internal(resolved_backend, requested_backend_id, _BACKEND_RESOLUTION_REGISTRY)
+	_set_backend_internal(resolved_backend, resolved_backend_id, _BACKEND_RESOLUTION_REGISTRY, requested_backend_id)
 	return true
 
-func _set_backend_internal(backend: CameraTrackingBackend, backend_id: String, resolution_mode: String) -> void:
+func _set_backend_internal(backend: CameraTrackingBackend, backend_id: String, resolution_mode: String, requested_backend_id: String = "") -> void:
 	var normalized_backend_id := _normalize_backend_id(backend_id)
-	if _backend == backend and _resolved_backend_id == normalized_backend_id and _backend_resolution_mode == resolution_mode:
+	var normalized_requested_backend_id := CameraTrackingConfig.normalize_requested_backend(requested_backend_id if requested_backend_id != "" else normalized_backend_id)
+	if _backend == backend and _resolved_backend_id == normalized_backend_id and _requested_backend_id == normalized_requested_backend_id and _backend_resolution_mode == resolution_mode:
 		return
 	if _backend != null:
 		_disconnect_backend(_backend)
 	_backend = backend
+	_requested_backend_id = normalized_requested_backend_id if backend != null else ""
 	_resolved_backend_id = normalized_backend_id if backend != null else ""
 	_backend_resolution_mode = resolution_mode if backend != null else ""
 	if _backend != null:

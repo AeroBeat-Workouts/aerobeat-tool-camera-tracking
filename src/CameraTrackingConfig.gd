@@ -1,7 +1,8 @@
 class_name CameraTrackingConfig
 extends RefCounted
 
-const DEFAULT_BACKEND := "mediapipe_python"
+const DEFAULT_BACKEND := "camera_tracking_default"
+const DEFAULT_BACKEND_IMPL := "mediapipe_python"
 const DEFAULT_SOURCE_KIND := "live_camera"
 const DEFAULT_TRACKING_QUALITY := "optimized"
 const DEFAULT_OVERLAY_MODE := "optimized"
@@ -33,7 +34,21 @@ static func defaults() -> Dictionary:
 static func normalize(config: Dictionary = {}) -> Dictionary:
 	var normalized := defaults()
 	_deep_merge(normalized, config)
+	normalized["backend"] = normalize_requested_backend(normalized.get("backend", DEFAULT_BACKEND))
 	return normalized
+
+static func preferred_backend_id() -> String:
+	return DEFAULT_BACKEND_IMPL
+
+static func normalize_requested_backend(backend_id: Variant) -> String:
+	var normalized := str(backend_id).strip_edges()
+	return normalized if normalized != "" else DEFAULT_BACKEND
+
+static func resolve_backend_id(backend_id: Variant) -> String:
+	var requested_backend_id := normalize_requested_backend(backend_id)
+	if requested_backend_id == DEFAULT_BACKEND:
+		return preferred_backend_id()
+	return requested_backend_id
 
 static func make_state_detail(overrides: Dictionary = {}) -> Dictionary:
 	var detail := {

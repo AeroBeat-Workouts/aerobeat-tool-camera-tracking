@@ -103,11 +103,18 @@ func test_config_normalization_preserves_contract_shape() -> void:
 		"source": {"camera_id": "/dev/video7"},
 		"preview": {"flip_horizontal": false}
 	})
-	assert_eq(normalized.get("backend"), "mediapipe_python")
+	assert_eq(normalized.get("backend"), "camera_tracking_default")
 	assert_eq(normalized.get("source", {}).get("kind"), "live_camera")
 	assert_eq(normalized.get("source", {}).get("camera_id"), "/dev/video7")
 	assert_eq(normalized.get("tracking", {}).get("quality"), "optimized")
 	assert_false(normalized.get("preview", {}).get("flip_horizontal"))
+
+func test_backend_request_defaults_to_neutral_alias_and_resolves_to_vendor_backend() -> void:
+	assert_eq(CameraTrackingConfig.defaults().get("backend"), "camera_tracking_default")
+	assert_eq(CameraTrackingConfig.normalize_requested_backend(""), "camera_tracking_default")
+	assert_eq(CameraTrackingConfig.resolve_backend_id(""), "mediapipe_python")
+	assert_eq(CameraTrackingConfig.resolve_backend_id("camera_tracking_default"), "mediapipe_python")
+	assert_eq(CameraTrackingConfig.resolve_backend_id("mediapipe_python"), "mediapipe_python")
 
 func test_camera_tracking_defaults_expose_contract_shell() -> void:
 	var tracker := CameraTracking.new()
@@ -137,6 +144,8 @@ func test_frame_normalization_preserves_tool_defaults_for_unproven_fields() -> v
 		"preview": {"flip_horizontal": false}
 	})
 	assert_eq(frame.get("timestamp_ms"), 42)
+	assert_eq(frame.get("backend_request"), "mediapipe_python")
+	assert_eq(frame.get("backend_impl"), "mediapipe_python")
 	assert_eq(frame.get("frame_size", {}).get("x"), 640)
 	assert_eq(frame.get("frame_size", {}).get("y"), 480)
 	assert_eq(frame.get("confidence"), 0.0)
@@ -236,10 +245,12 @@ func test_preview_surface_stack_restores_previous_attachment_when_latest_detache
 
 func test_start_without_registered_backend_raises_structured_error() -> void:
 	var tracker := CameraTracking.new()
-	tracker.start({"backend": "mediapipe_python"})
+	tracker.start({})
 	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_ERROR)
 	assert_eq(tracker.get_last_error().get("code"), "backend_unregistered")
 	assert_eq(tracker.get_last_error().get("backend"), "mediapipe_python")
+	assert_eq(tracker.get_last_error().get("backend_request"), "camera_tracking_default")
+	assert_eq(tracker.get_last_error().get("backend_impl"), "mediapipe_python")
 	tracker.free()
 
 func test_fake_backend_drives_state_preview_and_tracking_contracts() -> void:
