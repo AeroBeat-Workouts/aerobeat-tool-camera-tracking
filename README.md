@@ -40,7 +40,7 @@ This repo follows the AeroBeat GodotEnv package convention.
 
 The repo root remains the package/published boundary for downstream consumers. `.testbed/` is only the proving surface. Do real sharable work at the repo root, not inside `.testbed/addons/` mirrors.
 
-For repo-local proving, `./scripts/prepare_testbed.sh` creates untracked local shim files under `.testbed/addons/aerobeat-tool-camera-tracking/src/` so installed vendor packages can resolve the repo's live `src/` contract files without tracking addon-mirror source in git. The committed truth remains repo-root `src/`; the addon-path shims are only local proving glue.
+For repo-local proving, `./scripts/prepare_testbed.sh` creates untracked local symlinks under `.testbed/addons/aerobeat-tool-camera-tracking/src/` so the testbed resolves the repo's live `src/` contract files without duplicating `class_name` scripts inside the hidden addon mirror. The committed truth remains repo-root `src/`; the addon-path symlinks are only local proving glue.
 
 ### Restore dev/test dependencies
 

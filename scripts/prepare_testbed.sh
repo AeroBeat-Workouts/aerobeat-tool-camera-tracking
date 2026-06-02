@@ -11,15 +11,13 @@ if [ -L "$overlay_root" ]; then
 fi
 
 mkdir -p "$overlay_src"
-find "$overlay_src" -maxdepth 1 -type f -name '*.gd' -delete
+find "$overlay_src" -maxdepth 1 \( -type f -o -type l \) \( -name '*.gd' -o -name '*.gd.uid' -o -name '*.uid' \) -delete
 
-for source_file in "$source_root"/*.gd; do
+for source_file in "$source_root"/*; do
   [ -f "$source_file" ] || continue
   name="$(basename "$source_file")"
-  cat > "$overlay_src/$name" <<EOF
-extends "res://src/$name"
-EOF
+  ln -sfn "$source_file" "$overlay_src/$name"
 done
 
-echo "Prepared local testbed overlay shims in $overlay_src"
+echo "Prepared local testbed source symlinks in $overlay_src"
 ls -1 "$overlay_src"
