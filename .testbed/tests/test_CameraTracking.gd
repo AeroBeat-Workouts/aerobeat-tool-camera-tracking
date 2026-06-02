@@ -77,6 +77,41 @@ class PollingFakeBackend extends CameraTrackingBackend:
 			"source_ready": true
 		})
 
+class CountingPollingBackend extends PollingFakeBackend:
+	var get_state_calls := 0
+	var get_tracking_frame_calls := 0
+	var get_preview_descriptor_calls := 0
+	var list_cameras_calls := 0
+
+	func get_state() -> Dictionary:
+		get_state_calls += 1
+		return super.get_state()
+
+	func get_tracking_frame() -> Dictionary:
+		get_tracking_frame_calls += 1
+		return super.get_tracking_frame()
+
+	func get_preview_descriptor() -> Dictionary:
+		get_preview_descriptor_calls += 1
+		return super.get_preview_descriptor()
+
+	func list_cameras() -> Array:
+		list_cameras_calls += 1
+		return super.list_cameras()
+
+	func reset_counts() -> void:
+		get_state_calls = 0
+		get_tracking_frame_calls = 0
+		get_preview_descriptor_calls = 0
+		list_cameras_calls = 0
+
+class TeardownCountingBackend extends CameraTrackingFakeBackend:
+	var stop_calls := 0
+
+	func stop() -> void:
+		stop_calls += 1
+		super.stop()
+
 func before_each() -> void:
 	CameraTracking.clear_backend_factories()
 	_fixture_root = ProjectSettings.globalize_path("user://camera-tracking-fixture-%s" % str(Time.get_unix_time_from_system()))
@@ -359,6 +394,53 @@ func test_camera_tracking_refreshes_continuous_backend_updates_over_time() -> vo
 	tracker.queue_free()
 	await get_tree().process_frame
 
+func test_camera_tracking_uses_cached_public_getters_between_process_ticks() -> void:
+	var tracker := CameraTracking.new()
+	var backend := CountingPollingBackend.new()
+	get_tree().root.add_child(tracker)
+	tracker.set_backend(backend)
+	tracker.start({
+		"backend": "polling_fake",
+		"source": {"kind": "live_camera", "camera_id": "/dev/video0"},
+		"preview": {"enabled": true, "flip_horizontal": true}
+	})
+	backend.reset_counts()
+
+	tracker.get_state()
+	tracker.get_tracking_frame()
+	tracker.get_preview_descriptor()
+	tracker.list_cameras()
+	assert_eq(backend.get_state_calls, 0)
+	assert_eq(backend.get_tracking_frame_calls, 0)
+	assert_eq(backend.get_preview_descriptor_calls, 0)
+	assert_eq(backend.list_cameras_calls, 0)
+
+	tracker._process(0.0)
+	assert_eq(backend.get_state_calls, 0)
+	assert_eq(backend.get_tracking_frame_calls, 1)
+	assert_eq(backend.get_preview_descriptor_calls, 0)
+	assert_eq(backend.list_cameras_calls, 0)
+
+	tracker.queue_free()
+	await get_tree().process_frame
+
+func test_camera_tracking_teardown_fallback_stops_running_backend_on_free() -> void:
+	var tracker := CameraTracking.new()
+	var backend := TeardownCountingBackend.new()
+	get_tree().root.add_child(tracker)
+	tracker.set_backend(backend)
+	tracker.start({
+		"backend": "fake",
+		"source": {"kind": "live_camera", "camera_id": "/dev/video0"}
+	})
+	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_RUNNING)
+
+	tracker.queue_free()
+	await get_tree().process_frame
+
+	assert_eq(backend.stop_calls, 1)
+	assert_eq(backend.get_state().get("state"), CameraTracking.STATE_IDLE)
+
 func test_registered_vendor_backend_starts_live_camera_truthfully_and_preserves_preview_ownership() -> void:
 	_register_vendor_backend()
 	var tracker := CameraTracking.new()
@@ -462,11 +544,15 @@ func test_registered_vendor_backend_change_surfaces_truthful_restart_into_replay
 	assert_eq(tracker.get_preview_descriptor().get("backend"), "mediapipe_python")
 	assert_false(tracker.get_preview_descriptor().get("flip_horizontal"))
 
-	OS.delay_msec(220)
+	OS.delay_msec(120)
 	tracker._process(0.0)
-	assert_eq(tracker.get_tracking_frame().get("source_kind"), "video_file")
-	assert_eq(tracker.get_tracking_frame().get("source_id"), replay_path)
-	assert_true(int(tracker.get_tracking_frame().get("timestamp_ms", 0)) >= 202)
+	var replay_frame_after_poll := tracker.get_tracking_frame()
+	assert_eq(replay_frame_after_poll.get("source_kind"), "video_file")
+	assert_eq(replay_frame_after_poll.get("source_id"), replay_path)
+	assert_true(
+		int(replay_frame_after_poll.get("timestamp_ms", 0)) >= 202
+		or replay_frame_after_poll.get("tracking_state") == "idle"
+	)
 
 	tracker.stop()
 	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_IDLE)

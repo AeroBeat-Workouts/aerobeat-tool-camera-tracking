@@ -54,9 +54,13 @@ var _backend_resolution_mode: String = ""
 var _requested_backend_id: String = ""
 var _resolved_backend_id: String = ""
 var _last_cameras: Array = []
+var _close_request_window: Window = null
+var _tree_exit_connected := false
+var _teardown_fallback_in_progress := false
 
 func _ready() -> void:
 	set_process(false)
+	_connect_teardown_fallbacks()
 
 static func register_backend_factory(backend_id: String, factory: Callable) -> void:
 	CameraTrackingBackendRegistry.register_factory(backend_id, factory)
@@ -89,12 +93,7 @@ func start(config: Dictionary = {}) -> void:
 	_backend.start(_active_config)
 
 func stop() -> void:
-	_last_error = {}
-	if _backend == null:
-		_set_state(STATE_IDLE, CameraTrackingConfig.make_state_detail())
-		return
-	_set_state(STATE_STOPPING, CameraTrackingConfig.make_state_detail())
-	_backend.stop()
+	_request_backend_stop(false)
 
 func change(config: Dictionary) -> void:
 	_active_config = CameraTrackingConfig.normalize(config)
@@ -109,11 +108,11 @@ func change(config: Dictionary) -> void:
 	_backend.change(_active_config)
 
 func list_cameras() -> Array:
-	_refresh_from_backend_if_running(false)
+	if _backend != null and _last_cameras.is_empty() and _state == STATE_RUNNING:
+		_last_cameras = _backend.list_cameras().duplicate(true)
 	return _last_cameras.duplicate(true)
 
 func get_state() -> Dictionary:
-	_refresh_from_backend_if_running(false)
 	return {
 		"state": _state,
 		"detail": _state_detail.duplicate(true)
@@ -123,11 +122,9 @@ func get_active_config() -> Dictionary:
 	return _active_config.duplicate(true)
 
 func get_tracking_frame() -> Dictionary:
-	_refresh_from_backend_if_running(false)
 	return _tracking_frame.duplicate(true)
 
 func get_preview_descriptor() -> Dictionary:
-	_refresh_from_backend_if_running(false)
 	return _preview_descriptor.duplicate(true)
 
 func attach_preview_surface(node: Node) -> void:
@@ -284,19 +281,19 @@ func _get_attached_preview_surface() -> Node:
 	if _attached_preview_surfaces.is_empty():
 		return null
 	var surface: Variant = _attached_preview_surfaces.back()
-	return surface if surface is Node and is_instance_valid(surface) else null
+	return surface if is_instance_valid(surface) and surface is Node else null
 
 func _preview_surface_index(node: Node) -> int:
 	for i in range(_attached_preview_surfaces.size()):
 		var surface: Variant = _attached_preview_surfaces[i]
-		if surface == node and is_instance_valid(surface):
+		if is_instance_valid(surface) and surface == node:
 			return i
 	return -1
 
 func _prune_preview_surfaces() -> void:
 	var retained: Array = []
 	for surface: Variant in _attached_preview_surfaces:
-		if surface is Node and is_instance_valid(surface):
+		if is_instance_valid(surface) and surface is Node:
 			retained.append(surface)
 	_attached_preview_surfaces = retained
 
@@ -314,39 +311,64 @@ func _refresh_from_backend_if_running(emit_updates: bool) -> void:
 	if _state != STATE_RUNNING:
 		return
 
-	var backend_state: Dictionary = _backend.get_state()
-	var next_state := str(backend_state.get("state", _state))
-	var next_detail := CameraTrackingConfig.make_state_detail(
-		backend_state.get("detail", CameraTrackingConfig.make_state_detail())
-	)
 	var next_frame := CameraTrackingFrame.normalize(_backend.get_tracking_frame(), _active_config)
-	var next_preview := _compose_preview_descriptor(_backend.get_preview_descriptor())
-	var next_cameras := _backend.list_cameras().duplicate(true)
-
-	var state_changed_now := next_state != _state or next_detail != _state_detail
 	var frame_changed_now := next_frame != _tracking_frame
-	var preview_changed_now := next_preview != _preview_descriptor
-	var cameras_changed_now := next_cameras != _last_cameras
-
-	_state = next_state
-	_state_detail = next_detail
 	_tracking_frame = next_frame
-	_preview_descriptor = next_preview
-	_last_cameras = next_cameras
 	_sync_process_state()
 
-	if emit_updates:
-		if preview_changed_now:
-			preview_changed.emit(_preview_descriptor.duplicate(true))
-		if frame_changed_now:
-			tracking_updated.emit(_tracking_frame.duplicate(true))
-		if cameras_changed_now:
-			cameras_changed.emit(_last_cameras.duplicate(true))
-		if state_changed_now:
-			state_changed.emit(_state, _state_detail.duplicate(true))
+	if emit_updates and frame_changed_now:
+		tracking_updated.emit(_tracking_frame.duplicate(true))
 
 func _sync_process_state() -> void:
 	set_process(_backend != null and _state == STATE_RUNNING and is_inside_tree())
+
+func _connect_teardown_fallbacks() -> void:
+	var tree := get_tree()
+	if tree == null:
+		return
+	if tree.has_signal("tree_exiting") and not tree.is_connected("tree_exiting", Callable(self, "_on_tree_exiting")):
+		tree.connect("tree_exiting", Callable(self, "_on_tree_exiting"))
+		_tree_exit_connected = true
+	var root := tree.root
+	if root == null or not root.has_signal("close_requested"):
+		return
+	if not root.is_connected("close_requested", Callable(self, "_on_close_requested")):
+		root.connect("close_requested", Callable(self, "_on_close_requested"))
+	_close_request_window = root
+
+func _disconnect_teardown_fallbacks() -> void:
+	var tree := get_tree()
+	if _tree_exit_connected and tree != null and tree.is_connected("tree_exiting", Callable(self, "_on_tree_exiting")):
+		tree.disconnect("tree_exiting", Callable(self, "_on_tree_exiting"))
+	_tree_exit_connected = false
+	if _close_request_window != null and _close_request_window.is_connected("close_requested", Callable(self, "_on_close_requested")):
+		_close_request_window.disconnect("close_requested", Callable(self, "_on_close_requested"))
+	_close_request_window = null
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		_request_backend_stop(true)
+
+func _exit_tree() -> void:
+	_request_backend_stop(true)
+	_disconnect_teardown_fallbacks()
+
+func _request_backend_stop(from_teardown_fallback: bool) -> void:
+	_last_error = {}
+	if _backend == null:
+		_set_state(STATE_IDLE, CameraTrackingConfig.make_state_detail())
+		return
+	if from_teardown_fallback and _teardown_fallback_in_progress:
+		return
+	if _state == STATE_IDLE:
+		return
+	if from_teardown_fallback:
+		_teardown_fallback_in_progress = true
+	if _state != STATE_STOPPING:
+		_set_state(STATE_STOPPING, CameraTrackingConfig.make_state_detail())
+	_backend.stop()
+	if from_teardown_fallback:
+		_teardown_fallback_in_progress = false
 
 func _on_backend_state_changed(state: String, detail: Dictionary) -> void:
 	if _backend != null:
@@ -374,3 +396,9 @@ func _on_backend_error_raised(error_info: Dictionary) -> void:
 	_last_error = error_info.duplicate(true)
 	_set_state(STATE_ERROR, CameraTrackingConfig.make_state_detail(_state_detail))
 	error_raised.emit(_last_error.duplicate(true))
+
+func _on_tree_exiting() -> void:
+	_request_backend_stop(true)
+
+func _on_close_requested() -> void:
+	_request_backend_stop(true)
