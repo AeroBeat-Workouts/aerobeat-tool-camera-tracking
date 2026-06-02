@@ -243,14 +243,25 @@ func test_preview_surface_stack_restores_previous_attachment_when_latest_detache
 	parent.free()
 	tracker.free()
 
+func test_start_auto_bootstraps_default_vendor_backend_when_mounted() -> void:
+	var tracker := CameraTracking.new()
+	tracker.start(_make_live_config({
+		"source": {"camera_id": _fixture_root.path_join("video2")}
+	}))
+	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_RUNNING)
+	assert_true(CameraTracking.get_registered_backend_ids().has("mediapipe_python"))
+	assert_eq(tracker.get_tracking_frame().get("backend"), "mediapipe_python")
+	assert_eq(tracker.get_tracking_frame().get("source_id"), _fixture_root.path_join("video2"))
+	tracker.free()
+
 func test_start_without_registered_backend_raises_structured_error() -> void:
 	var tracker := CameraTracking.new()
-	tracker.start({})
+	tracker.start({"backend": "missing_backend"})
 	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_ERROR)
 	assert_eq(tracker.get_last_error().get("code"), "backend_unregistered")
-	assert_eq(tracker.get_last_error().get("backend"), "mediapipe_python")
-	assert_eq(tracker.get_last_error().get("backend_request"), "camera_tracking_default")
-	assert_eq(tracker.get_last_error().get("backend_impl"), "mediapipe_python")
+	assert_eq(tracker.get_last_error().get("backend"), "missing_backend")
+	assert_eq(tracker.get_last_error().get("backend_request"), "missing_backend")
+	assert_eq(tracker.get_last_error().get("backend_impl"), "missing_backend")
 	tracker.free()
 
 func test_fake_backend_drives_state_preview_and_tracking_contracts() -> void:

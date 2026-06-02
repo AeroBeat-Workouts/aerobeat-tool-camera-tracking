@@ -4,12 +4,13 @@ This repo hosts the first **tool-owned camera-tracking contract and public-servi
 
 The current slice is intentionally narrow but now truthful: `CameraTracking` remains the **vendor-agnostic camera-tracking service** and **singleton shell** that owns lifecycle, preview attachment semantics, source coordination, backend resolution policy, and normalized public tracking payloads, while repo-local proving can register a real vendor backend factory and drive both live-camera and replay/video-file paths through the public tool API. The public frame still stays conservative while becoming continuous: repeated updates can advance the latest normalized frame over time, `detail.tracking_ready` can truthfully mean the current continuous lane is active, and the public frame still carries only the minimal real landmark fields the paired vendor slice can truly prove.
 
-The tool surface is aligned to the approved API sketch in `.plans/bootstrap-architecture/CAMERA-TRACKING-API.md`, which defines the current state machine, required signals, config shape, preview ownership model, and normalized tracking-frame payload. The newly added backend-factory seam keeps sharable ownership here at the repo root without hard-preloading vendor source from this package.
+The tool surface is aligned to the approved API sketch in `.plans/bootstrap-architecture/CAMERA-TRACKING-API.md`, which defines the current state machine, required signals, config shape, preview ownership model, and normalized tracking-frame payload. The backend-factory seam keeps sharable ownership here at the repo root, and the tool now lazily auto-registers the mounted `mediapipe_python` vendor lane when consumers still request the default backend alias.
 
 ## Current contract scope
 
 - `CameraTracking` singleton shell with lifecycle methods matching the first-pass API
 - tool-owned backend registration and resolution keyed by public backend ID
+- lazy default-backend bootstrap for the mounted `aerobeat-vendor-mediapipe-python` lane when `camera_tracking_default` resolves to `mediapipe_python`
 - standardized top-level state constants (`idle`, `starting`, `running`, `restarting`, `stopping`, `error`)
 - readiness/detail helpers for `backend_ready`, `preview_ready`, `tracking_ready`, and `source_ready`
 - `CameraTrackingConfig` helpers for defaults and normalization
@@ -77,4 +78,4 @@ godot --headless --path .testbed --script addons/aerobeat-vendor-godot-unit-test
 - public continuous updates are now supported only to the level the paired vendor runtime can prove; `get_tracking_frame()` surfaces the latest normalized frame and `tracking_updated` can repeat while the service remains running
 - frame-level public tracking truth is still intentionally conservative: only `tracked` (current normalized frame has landmarks) or `idle` (it does not) are claimed here
 - public landmarks are intentionally limited to `id/x/y/z/v`; `confidence`, `head_position`, `head_velocity`, `head_orientation`, and `skeleton` remain default/empty by design
-- downstream consumers will still need a stable product/runtime registration pattern, but the tool-side backend-factory seam is now the ownership boundary for that later work
+- downstream consumers no longer need to paper over the current default `mediapipe_python` registration seam locally, but broader multi-vendor product/runtime registration policy may still evolve later

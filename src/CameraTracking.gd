@@ -38,6 +38,10 @@ const READINESS_KEYS := [
 const _BACKEND_RESOLUTION_MANUAL := "manual"
 const _BACKEND_RESOLUTION_REGISTRY := "registry"
 
+const _MEDIAPIPE_PYTHON_BACKEND_ID := "mediapipe_python"
+const _MEDIAPIPE_PYTHON_BACKEND_SCRIPT_PATH := "res://addons/aerobeat-vendor-mediapipe-python/src/MediaPipePythonCameraTrackingBackend.gd"
+const _MEDIAPIPE_PYTHON_RUNTIME_BRIDGE_SCRIPT_PATH := "res://addons/aerobeat-vendor-mediapipe-python/src/MediaPipePythonRuntimeBridge.gd"
+
 var _state: String = STATE_IDLE
 var _state_detail: Dictionary = CameraTrackingConfig.make_state_detail()
 var _active_config: Dictionary = CameraTrackingConfig.defaults()
@@ -164,6 +168,8 @@ func _ensure_backend_for_config(config: Dictionary) -> bool:
 			_requested_backend_id = requested_backend_id
 			return true
 	if CameraTrackingBackendRegistry.has_factory(resolved_backend_id) == false:
+		_try_auto_register_backend_factory(resolved_backend_id)
+	if CameraTrackingBackendRegistry.has_factory(resolved_backend_id) == false:
 		_fail_with({
 			"code": "backend_unregistered",
 			"message": "No camera tracking backend factory is registered for '%s'" % resolved_backend_id,
@@ -205,6 +211,24 @@ func _set_backend_internal(backend: CameraTrackingBackend, backend_id: String, r
 
 func _normalize_backend_id(backend_id: Variant) -> String:
 	return str(backend_id).strip_edges()
+
+func _try_auto_register_backend_factory(resolved_backend_id: String) -> void:
+	match resolved_backend_id:
+		_MEDIAPIPE_PYTHON_BACKEND_ID:
+			_register_mediapipe_python_backend_factory()
+
+func _register_mediapipe_python_backend_factory() -> void:
+	if CameraTrackingBackendRegistry.has_factory(_MEDIAPIPE_PYTHON_BACKEND_ID):
+		return
+	var backend_script: Variant = load(_MEDIAPIPE_PYTHON_BACKEND_SCRIPT_PATH)
+	var runtime_bridge_script: Variant = load(_MEDIAPIPE_PYTHON_RUNTIME_BRIDGE_SCRIPT_PATH)
+	if backend_script == null or runtime_bridge_script == null:
+		return
+	CameraTrackingBackendRegistry.register_factory(_MEDIAPIPE_PYTHON_BACKEND_ID, func(_config: Dictionary):
+		var backend: Variant = backend_script.new()
+		backend.set_runtime_bridge(runtime_bridge_script.new())
+		return backend
+	)
 
 func _connect_backend(backend: CameraTrackingBackend) -> void:
 	backend.state_changed.connect(_on_backend_state_changed)
