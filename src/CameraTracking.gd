@@ -42,6 +42,22 @@ const _MEDIAPIPE_PYTHON_BACKEND_ID := "mediapipe_python"
 const _MEDIAPIPE_PYTHON_BACKEND_SCRIPT_PATH := "res://addons/aerobeat-vendor-mediapipe-python/src/MediaPipePythonCameraTrackingBackend.gd"
 const _MEDIAPIPE_PYTHON_RUNTIME_BRIDGE_SCRIPT_PATH := "res://addons/aerobeat-vendor-mediapipe-python/src/MediaPipePythonRuntimeBridge.gd"
 
+class _MediaPipePythonBackendFactory:
+	extends RefCounted
+
+	func create(_config: Dictionary) -> CameraTrackingBackend:
+		var backend_script: Variant = load(CameraTracking._MEDIAPIPE_PYTHON_BACKEND_SCRIPT_PATH)
+		var runtime_bridge_script: Variant = load(CameraTracking._MEDIAPIPE_PYTHON_RUNTIME_BRIDGE_SCRIPT_PATH)
+		if backend_script == null or runtime_bridge_script == null:
+			return null
+		var backend_candidate: Variant = backend_script.new()
+		if backend_candidate == null or not (backend_candidate is CameraTrackingBackend):
+			return null
+		backend_candidate.set_runtime_bridge(runtime_bridge_script.new())
+		return backend_candidate
+
+static var _mediapipe_python_backend_factory := _MediaPipePythonBackendFactory.new()
+
 var _state: String = STATE_IDLE
 var _state_detail: Dictionary = CameraTrackingConfig.make_state_detail()
 var _active_config: Dictionary = CameraTrackingConfig.defaults()
@@ -221,10 +237,9 @@ func _register_mediapipe_python_backend_factory() -> void:
 	var runtime_bridge_script: Variant = load(_MEDIAPIPE_PYTHON_RUNTIME_BRIDGE_SCRIPT_PATH)
 	if backend_script == null or runtime_bridge_script == null:
 		return
-	CameraTrackingBackendRegistry.register_factory(_MEDIAPIPE_PYTHON_BACKEND_ID, func(_config: Dictionary):
-		var backend: Variant = backend_script.new()
-		backend.set_runtime_bridge(runtime_bridge_script.new())
-		return backend
+	CameraTrackingBackendRegistry.register_factory(
+		_MEDIAPIPE_PYTHON_BACKEND_ID,
+		Callable(_mediapipe_python_backend_factory, "create")
 	)
 
 func _connect_backend(backend: CameraTrackingBackend) -> void:
