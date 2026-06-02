@@ -47,10 +47,7 @@ GodotEnv now mounts this repo into `.testbed/addons/aerobeat-tool-camera-trackin
 From the repo root:
 
 ```bash
-/home/derrick/.openclaw/workspace/scripts/godotenv-sync
-cd .testbed
-godotenv addons install
-cd ..
+/home/derrick/.openclaw/workspace/scripts/godotenv-sync --repo .testbed
 ```
 
 Use the sync helper first if the local toolchain or linked workspace packages need refreshing. `godotenv addons install` restores the managed symlink for this repo automatically via `.testbed/addons.jsonc`; no extra prepare step is required.
