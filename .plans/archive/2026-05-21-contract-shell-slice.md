@@ -1,7 +1,7 @@
 # AeroBeat Tool Camera Tracking — Contract-Shell Slice
 
 **Date:** 2026-05-21  
-**Status:** Draft  
+**Status:** Stale  
 **Agent:** Cookie 🍪
 
 ---

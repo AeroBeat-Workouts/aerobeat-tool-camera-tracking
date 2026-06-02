@@ -1,7 +1,7 @@
 # AeroBeat Tool Camera Tracking — Live-Camera Integration Slice
 
 **Date:** 2026-05-22  
-**Status:** Draft  
+**Status:** Stale  
 **Agent:** Cookie 🍪
 
 ---

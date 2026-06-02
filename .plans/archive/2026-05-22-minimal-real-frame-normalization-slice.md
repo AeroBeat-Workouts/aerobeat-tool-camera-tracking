@@ -1,7 +1,7 @@
 # AeroBeat Tool Camera Tracking — Minimal Real Frame Normalization Slice
 
 **Date:** 2026-05-22  
-**Status:** Draft  
+**Status:** Stale  
 **Agent:** Cookie 🍪
 
 ---
