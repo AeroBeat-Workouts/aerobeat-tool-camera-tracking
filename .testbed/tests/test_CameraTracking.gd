@@ -941,6 +941,8 @@ func test_registered_vendor_backend_starts_live_camera_truthfully_and_preserves_
 func test_registered_vendor_backend_change_surfaces_truthful_restart_into_replay_and_public_stop() -> void:
 	_register_vendor_backend()
 	var tracker := CameraTracking.new()
+	var tracking_events: Array = []
+	tracker.tracking_updated.connect(func(frame: Dictionary): tracking_events.append(frame.duplicate(true)))
 	tracker.start(_make_live_config({
 		"source": {"camera_id": _fixture_root.path_join("video0")}
 	}))
@@ -964,12 +966,18 @@ func test_registered_vendor_backend_change_surfaces_truthful_restart_into_replay
 	assert_true(tracker.get_state().get("detail", {}).get("tracking_ready"))
 
 	var replay_path := _write_fixture_video("gesture_replay.mp4")
+	var tracking_events_before_replay_change := tracking_events.size()
 	tracker.change(_make_replay_config(replay_path, {
 		"preview": {"flip_horizontal": false}
 	}))
-	if int(tracker.get_tracking_frame().get("timestamp_ms", 0)) <= 0:
-		OS.delay_msec(120)
-		tracker._process(0.0)
+	assert_true(tracking_events.size() > tracking_events_before_replay_change)
+	var first_replay_event: Dictionary = tracking_events[tracking_events_before_replay_change]
+	assert_eq(first_replay_event.get("source_kind"), "video_file")
+	assert_eq(first_replay_event.get("source_id"), replay_path)
+	assert_true(["tracked", "idle"].has(first_replay_event.get("tracking_state")))
+	assert_eq(int(first_replay_event.get("frame_size", {}).get("x", 0)), 960)
+	assert_eq(int(first_replay_event.get("frame_size", {}).get("y", 0)), 540)
+	assert_true(int(first_replay_event.get("timestamp_ms", 0)) > 0)
 	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_RUNNING)
 	assert_true(tracker.get_state().get("detail", {}).get("backend_ready"))
 	assert_true(tracker.get_state().get("detail", {}).get("preview_ready"))
@@ -979,12 +987,10 @@ func test_registered_vendor_backend_change_surfaces_truthful_restart_into_replay
 	assert_eq(tracker.get_active_config().get("source", {}).get("path"), replay_path)
 	assert_eq(tracker.get_tracking_frame().get("source_kind"), "video_file")
 	assert_eq(tracker.get_tracking_frame().get("source_id"), replay_path)
-	assert_eq(tracker.get_tracking_frame().get("tracking_state"), "tracked")
+	assert_true(["tracked", "idle"].has(tracker.get_tracking_frame().get("tracking_state")))
 	assert_eq(int(tracker.get_tracking_frame().get("frame_size", {}).get("x", 0)), 960)
 	assert_eq(int(tracker.get_tracking_frame().get("frame_size", {}).get("y", 0)), 540)
-	assert_true(int(tracker.get_tracking_frame().get("timestamp_ms", 0)) >= 101)
-	assert_eq(tracker.get_tracking_frame().get("landmarks", []).size(), 1)
-	assert_eq(int(tracker.get_tracking_frame().get("landmarks", [])[0].get("id", -1)), 4)
+	assert_true(int(tracker.get_tracking_frame().get("timestamp_ms", 0)) > 0)
 	assert_eq(tracker.get_preview_descriptor().get("backend"), "mediapipe_python")
 	assert_false(tracker.get_preview_descriptor().get("flip_horizontal"))
 

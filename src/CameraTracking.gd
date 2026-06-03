@@ -133,8 +133,6 @@ func change(config: Dictionary) -> void:
 		DETAIL_SOURCE_READY: true,
 	}))
 	_backend.change(_active_config)
-	if _backend != null and str(_backend.get_state().get("state", STATE_IDLE)) == STATE_RUNNING:
-		_sync_from_backend()
 
 func list_cameras() -> Array:
 	if _backend != null and _last_cameras.is_empty() and _state == STATE_RUNNING:
