@@ -129,6 +129,49 @@ Maximum age, in frames, before a hand sample is considered stale/invalid.
 
 Number of consecutive valid frames required before the tracker reports a reacquired valid hand lane.
 
+## Normalized hand output contract
+
+The tracker layer now owns the per-side hand transport contract exposed in normalized tracking frames:
+
+```yaml
+hands:
+  left|right:
+    tracking_valid: true|false
+    tracking_state: disabled|idle|unavailable|reacquiring|tracked|stale|tracking_lost
+    landmark_mode: lite|full
+    frame_index: <int>
+    timestamp_seconds: <float>
+    stale_frames: <int>
+    association:
+      side: left|right
+      assigned: true|false
+      method: none|prefer_existing_pose_side_binding|nearest_wrist_fallback
+      source_hand_index: <int>
+      source_label: <string>
+      source_score: <float>
+    landmarks:
+      - id: <int>
+        x: <float>
+        y: <float>
+        z: <float>
+        v: <float>
+    bbox:
+      x: <float>
+      y: <float>
+      width: <float>
+      height: <float>
+      area: <float>
+      area_unit: normalized_frame_area
+```
+
+Important semantics:
+
+- side ownership is tracker-associated upstream from raw MediaPipe hand detections; vendor handedness labels are recorded as metadata only and are not treated as durable left/right truth
+- preview mirroring is applied in the tracker layer so normalized hand coordinates stay aligned with normalized pose coordinates
+- `tracking_valid` becomes `false` during `reacquiring`, `unavailable`, and `tracking_lost`
+- stale carry-forward is allowed only up to `tracking.hands.validity.max_stale_frames`; after that the lane becomes `tracking_lost`
+- if the vendor explicitly reports hand inference unavailable, the tracker must surface `unavailable` instead of pretending stale/tracked data exists
+
 ## Locked profile defaults
 
 ### Boxing

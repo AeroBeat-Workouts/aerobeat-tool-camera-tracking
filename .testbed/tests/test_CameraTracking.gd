@@ -312,6 +312,189 @@ func test_frame_normalization_keeps_tracking_idle_when_no_public_landmarks_exist
 	assert_eq(frame.get("tracking_state"), "idle")
 	assert_eq(frame.get("landmarks", []).size(), 0)
 
+func test_config_normalization_adds_tracker_pose_and_hand_defaults() -> void:
+	var config := CameraTrackingConfig.normalize({
+		"tracking": {
+			"pose": {
+				"smoothing_style": "lite_raw",
+				"inference_interval_frames": 3
+			},
+			"hands": {
+				"enabled": true,
+				"landmark_mode": "full",
+				"inference_interval_frames": 4,
+				"bbox_recompute_interval_frames": 5,
+				"association": {
+					"prefer_existing_pose_side_binding": false
+				},
+				"validity": {
+					"max_stale_frames": 7,
+					"reacquire_stable_frames": 2
+				}
+			}
+		}
+	})
+	assert_eq(config.get("tracking", {}).get("pose", {}).get("enabled"), true)
+	assert_eq(config.get("tracking", {}).get("pose", {}).get("inference_interval_frames"), 3)
+	assert_eq(config.get("tracking", {}).get("pose", {}).get("smoothing_style"), "lite_raw")
+	assert_eq(config.get("tracking", {}).get("hands", {}).get("enabled"), true)
+	assert_eq(config.get("tracking", {}).get("hands", {}).get("landmark_mode"), "full")
+	assert_eq(config.get("tracking", {}).get("hands", {}).get("bbox_recompute_interval_frames"), 5)
+	assert_eq(config.get("tracking", {}).get("hands", {}).get("association", {}).get("prefer_existing_pose_side_binding"), false)
+	assert_eq(config.get("tracking", {}).get("hands", {}).get("association", {}).get("nearest_wrist_fallback"), true)
+	assert_eq(config.get("tracking", {}).get("hands", {}).get("validity", {}).get("max_stale_frames"), 7)
+	assert_eq(config.get("runtime", {}).get("pose_inference_interval_frames"), 3)
+	assert_eq(config.get("runtime", {}).get("pose_smoothing_style"), "lite_raw")
+	assert_eq(config.get("runtime", {}).get("no_filter"), true)
+	assert_eq(config.get("runtime", {}).get("hand_tracking_enabled"), true)
+	assert_eq(config.get("runtime", {}).get("hand_landmark_mode"), "full")
+	assert_eq(config.get("runtime", {}).get("hand_bbox_recompute_interval_frames"), 5)
+
+func test_frame_normalization_builds_per_side_hand_payload_from_vendor_samples() -> void:
+	var config := {
+		"backend": "mediapipe_python",
+		"source": {"kind": "live_camera", "camera_id": "/dev/video0"},
+		"preview": {"flip_horizontal": false},
+		"tracking": {
+			"hands": {
+				"enabled": true,
+				"landmark_mode": "lite",
+				"inference_interval_frames": 2,
+				"bbox_recompute_interval_frames": 3,
+				"validity": {
+					"max_stale_frames": 2,
+					"reacquire_stable_frames": 2
+				}
+			}
+		}
+	}
+	var frame := CameraTrackingFrame.normalize({
+		"timestamp_ms": 500,
+		"landmarks": [
+			{"id": 15, "x": 0.25, "y": 0.5, "z": 0.0, "visibility": 0.9},
+			{"id": 16, "x": 0.75, "y": 0.5, "z": 0.0, "visibility": 0.9}
+		],
+		"hands": [
+			{
+				"label": "Right",
+				"score": 0.91,
+				"landmarks": [{"id": 0, "x": 0.24, "y": 0.49, "z": 0.0}],
+				"bbox": {"x": 0.20, "y": 0.40, "width": 0.10, "height": 0.20, "area": 0.02}
+			},
+			{
+				"label": "Left",
+				"score": 0.89,
+				"landmarks": [{"id": 0, "x": 0.76, "y": 0.49, "z": 0.0}],
+				"bbox": {"x": 0.70, "y": 0.40, "width": 0.10, "height": 0.20, "area": 0.02}
+			}
+		],
+		"vendor_hand_tracking": {
+			"available": true,
+			"landmark_mode": "lite",
+			"inference_backend": "mediapipe_tasks_hand_landmarker",
+			"inference_interval_frames": 2,
+			"bbox_recompute_interval_frames": 3,
+			"max_stale_frames": 2,
+			"reacquire_stable_frames": 2
+		}
+	}, config)
+	var left_hand: Dictionary = frame.get("hands", {}).get("left", {})
+	var right_hand: Dictionary = frame.get("hands", {}).get("right", {})
+	assert_eq(frame.get("frame_index"), 1)
+	assert_eq(frame.get("timestamp_seconds"), 0.5)
+	assert_eq(frame.get("hand_tracking", {}).get("inference_interval_frames"), 2)
+	assert_eq(frame.get("hand_tracking", {}).get("bbox_recompute_interval_frames"), 3)
+	assert_eq(left_hand.get("tracking_state"), "reacquiring")
+	assert_false(left_hand.get("tracking_valid"))
+	assert_eq(left_hand.get("association", {}).get("method"), "nearest_wrist_fallback")
+	assert_eq(left_hand.get("association", {}).get("source_label"), "right")
+	assert_eq(left_hand.get("landmarks", []).size(), 1)
+	assert_eq(left_hand.get("bbox", {}).get("area_unit"), "normalized_frame_area")
+	assert_eq(right_hand.get("tracking_state"), "reacquiring")
+	assert_false(right_hand.get("tracking_valid"))
+	assert_eq(right_hand.get("association", {}).get("source_label"), "left")
+
+func test_frame_normalization_carries_stale_hands_until_validity_budget_expires() -> void:
+	var config := {
+		"backend": "mediapipe_python",
+		"source": {"kind": "live_camera", "camera_id": "/dev/video0"},
+		"preview": {"flip_horizontal": false},
+		"tracking": {
+			"hands": {
+				"enabled": true,
+				"validity": {
+					"max_stale_frames": 2,
+					"reacquire_stable_frames": 1
+				}
+			}
+		}
+	}
+	var first := CameraTrackingFrame.normalize({
+		"timestamp_ms": 100,
+		"landmarks": [
+			{"id": 15, "x": 0.20, "y": 0.5, "z": 0.0, "visibility": 0.9}
+		],
+		"hands": [
+			{
+				"label": "Left",
+				"score": 0.95,
+				"landmarks": [{"id": 0, "x": 0.21, "y": 0.5, "z": 0.0}],
+				"bbox": {"x": 0.18, "y": 0.42, "width": 0.08, "height": 0.16}
+			}
+		],
+		"vendor_hand_tracking": {
+			"available": true,
+			"landmark_mode": "lite",
+			"inference_backend": "mediapipe_tasks_hand_landmarker"
+		}
+	}, config)
+	var second := CameraTrackingFrame.normalize({
+		"timestamp_ms": 200,
+		"landmarks": [
+			{"id": 15, "x": 0.20, "y": 0.5, "z": 0.0, "visibility": 0.9}
+		],
+		"hands": [],
+		"vendor_hand_tracking": {
+			"available": true,
+			"landmark_mode": "lite",
+			"inference_backend": "mediapipe_tasks_hand_landmarker"
+		}
+	}, config, first)
+	var third := CameraTrackingFrame.normalize({
+		"timestamp_ms": 300,
+		"landmarks": [
+			{"id": 15, "x": 0.20, "y": 0.5, "z": 0.0, "visibility": 0.9}
+		],
+		"hands": [],
+		"vendor_hand_tracking": {
+			"available": true,
+			"landmark_mode": "lite",
+			"inference_backend": "mediapipe_tasks_hand_landmarker"
+		}
+	}, config, second)
+	var fourth := CameraTrackingFrame.normalize({
+		"timestamp_ms": 400,
+		"landmarks": [
+			{"id": 15, "x": 0.20, "y": 0.5, "z": 0.0, "visibility": 0.9}
+		],
+		"hands": [],
+		"vendor_hand_tracking": {
+			"available": true,
+			"landmark_mode": "lite",
+			"inference_backend": "mediapipe_tasks_hand_landmarker"
+		}
+	}, config, third)
+	assert_eq(first.get("hands", {}).get("left", {}).get("tracking_state"), "tracked")
+	assert_true(first.get("hands", {}).get("left", {}).get("tracking_valid"))
+	assert_eq(second.get("hands", {}).get("left", {}).get("tracking_state"), "stale")
+	assert_true(second.get("hands", {}).get("left", {}).get("tracking_valid"))
+	assert_eq(second.get("hands", {}).get("left", {}).get("stale_frames"), 1)
+	assert_eq(third.get("hands", {}).get("left", {}).get("tracking_state"), "stale")
+	assert_eq(third.get("hands", {}).get("left", {}).get("stale_frames"), 2)
+	assert_eq(fourth.get("hands", {}).get("left", {}).get("tracking_state"), "tracking_lost")
+	assert_false(fourth.get("hands", {}).get("left", {}).get("tracking_valid"))
+	assert_eq(fourth.get("hands", {}).get("left", {}).get("stale_frames"), 3)
+
 func test_attach_and_detach_preview_surface_updates_descriptor() -> void:
 	var tracker := CameraTracking.new()
 	var parent := Node.new()
@@ -784,6 +967,9 @@ func test_registered_vendor_backend_change_surfaces_truthful_restart_into_replay
 	tracker.change(_make_replay_config(replay_path, {
 		"preview": {"flip_horizontal": false}
 	}))
+	if int(tracker.get_tracking_frame().get("timestamp_ms", 0)) <= 0:
+		OS.delay_msec(120)
+		tracker._process(0.0)
 	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_RUNNING)
 	assert_true(tracker.get_state().get("detail", {}).get("backend_ready"))
 	assert_true(tracker.get_state().get("detail", {}).get("preview_ready"))

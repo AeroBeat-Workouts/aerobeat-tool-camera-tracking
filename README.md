@@ -13,14 +13,15 @@ The tool surface is aligned to the approved API sketch in `.plans/bootstrap-arch
 - lazy default-backend bootstrap for the mounted `aerobeat-vendor-mediapipe-python` lane when `camera_tracking_default` resolves to `mediapipe_python`
 - standardized top-level state constants (`idle`, `starting`, `running`, `restarting`, `stopping`, `error`)
 - readiness/detail helpers for `backend_ready`, `preview_ready`, `tracking_ready`, and `source_ready`
-- `CameraTrackingConfig` helpers for defaults and normalization
+- `CameraTrackingConfig` helpers for defaults and normalization, including tracker-layer pose/hand cadence, smoothing, association, and validity fields
 - `CameraTrackingBackend` interface seam for concrete integrations
 - `CameraTrackingFakeBackend` proving backend for repo-local tests
 - preview attachment contract helpers that preserve the preferred `attach_preview_surface(node)` ownership model
 - tool-owned `CameraTrackingPreviewPresenter` control plus `create_preview_presenter(options := {})` / `mount_preview_presenter(parent, options := {})` helper APIs for binding a session-owned preview surface + overlay in the right ownership layer
 - stacked preview attachment semantics for shared live sessions: the most recent attached surface is active, and `detach_preview_surface()` restores the previous tool-owned attachment instead of collapsing the whole preview state
 - normalized tracking-frame contract for downstream consumers and tests, with real sample timestamp/source/frame-size facts when the vendor runtime can prove them
-- tool-owned landmark normalization that exposes only public `landmarks[].id/x/y/z/v` fields, keeps `tracking_state` snapshot-honest (`tracked` only when public landmarks exist), and preserves richer body/head/confidence semantics as defaults
+- tool-owned landmark normalization that exposes only public `landmarks[].id/x/y/z/v` fields, keeps `tracking_state` snapshot-honest, and preserves richer body/head/confidence semantics as defaults
+- tool-owned per-side hand normalization that converts raw vendor detections into stable `hands.left` / `hands.right` payloads with `tracking_valid`, `tracking_state`, `landmark_mode`, `frame_index`, `timestamp_seconds`, `stale_frames`, `association`, `landmarks`, and normalized-frame `bbox` geometry (`area_unit = normalized_frame_area`)
 - tool-owned `get_camera_options(camera_id := "")` API that surfaces current live-camera mode options through a vendor-agnostic response shape (`requested_mode`, `reported_modes`, `probed_modes`, `selected_mode`, `actual_mode`) while delegating enumeration/probing to the mounted vendor backend
 - `.testbed/` proving that `backend = mediapipe_python` plus `source.kind = live_camera` or `source.kind = video_file` can flow through the real vendor runtime probe lane truthfully
 
@@ -28,7 +29,7 @@ The tool surface is aligned to the approved API sketch in `.plans/bootstrap-arch
 
 - **Type:** AeroBeat tool package
 - **License:** **Mozilla Public License 2.0 (MPL 2.0)**
-- **Implementation status:** truthful public-service slice for backend registration/resolution, runtime probe startup, camera inventory, preview facts, continuous update polling, and normalized minimal-real-landmark behavior (`timestamp_ms`, source identity, `frame_size`, snapshot `tracking_state`, and public landmark `id/x/y/z/v` now surface when the sampled frame truly yields a pose); replay/video-file sessions now flow through the same public `CameraTracking` service/preview/state seam as live mode, while richer body/head/confidence guarantees remain deferred
+- **Implementation status:** truthful public-service slice for backend registration/resolution, runtime probe startup, camera inventory, preview facts, continuous update polling, normalized pose landmarks, and tracker-layer hand transport. Public frames now surface `timestamp_ms`, `timestamp_seconds`, `frame_index`, source identity, `frame_size`, public landmark `id/x/y/z/v`, tracker-facing pose/hand config defaults, and normalized per-side hand payloads with association + stale/reacquire semantics. Replay/video-file sessions still flow through the same public `CameraTracking` service/preview/state seam as live mode, while richer body/head/confidence guarantees remain deferred
 
 ## GodotEnv development flow
 
@@ -82,6 +83,6 @@ godot --headless --path .testbed --script addons/aerobeat-vendor-godot-unit-test
 
 - replay/video-file sessions are now accepted through the same public `CameraTracking` service seam as live mode, but only to the minimal truthful level the paired vendor runtime can currently prove
 - public continuous updates are now supported only to the level the paired vendor runtime can prove; `get_tracking_frame()` surfaces the latest normalized frame and `tracking_updated` can repeat while the service remains running
-- frame-level public tracking truth is still intentionally conservative: only `tracked` (current normalized frame has landmarks) or `idle` (it does not) are claimed here
+- frame-level public tracking truth is still intentionally conservative at the top level, while per-side hand payloads now expose the richer tracker-owned states needed by downstream boxing slices (`disabled`, `idle`, `unavailable`, `reacquiring`, `tracked`, `stale`, `tracking_lost`)
 - public landmarks are intentionally limited to `id/x/y/z/v`; `confidence`, `head_position`, `head_velocity`, `head_orientation`, and `skeleton` remain default/empty by design
 - downstream consumers no longer need to paper over the current default `mediapipe_python` registration seam locally, but broader multi-vendor product/runtime registration policy may still evolve later

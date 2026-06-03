@@ -114,6 +114,8 @@ func start(config: Dictionary = {}) -> void:
 	_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor() if _backend != null else {})
 	_set_state(STATE_STARTING, CameraTrackingConfig.make_state_detail())
 	_backend.start(_active_config)
+	if _backend != null and str(_backend.get_state().get("state", STATE_IDLE)) == STATE_RUNNING:
+		_sync_from_backend()
 
 func stop() -> void:
 	_request_backend_stop(false)
@@ -131,6 +133,8 @@ func change(config: Dictionary) -> void:
 		DETAIL_SOURCE_READY: true,
 	}))
 	_backend.change(_active_config)
+	if _backend != null and str(_backend.get_state().get("state", STATE_IDLE)) == STATE_RUNNING:
+		_sync_from_backend()
 
 func list_cameras() -> Array:
 	if _backend != null and _last_cameras.is_empty() and _state == STATE_RUNNING:
@@ -329,7 +333,7 @@ func _sync_from_backend() -> void:
 		str(backend_state.get("state", STATE_IDLE)),
 		backend_state.get("detail", CameraTrackingConfig.make_state_detail())
 	)
-	_tracking_frame = CameraTrackingFrame.normalize(_backend.get_tracking_frame(), _active_config)
+	_tracking_frame = CameraTrackingFrame.normalize(_backend.get_tracking_frame(), _active_config, _tracking_frame)
 	_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor())
 	_camera_options = CameraTrackingCameraOptions.normalize(_backend.get_camera_options(), _active_config)
 	_playback_status = _backend.get_playback_status().duplicate(true)
@@ -387,7 +391,7 @@ func _refresh_from_backend_if_running(emit_updates: bool) -> void:
 	if _state != STATE_RUNNING:
 		return
 
-	var next_frame := CameraTrackingFrame.normalize(_backend.get_tracking_frame(), _active_config)
+	var next_frame := CameraTrackingFrame.normalize(_backend.get_tracking_frame(), _active_config, _tracking_frame)
 	var frame_changed_now := next_frame != _tracking_frame
 	_tracking_frame = next_frame
 	_playback_status = _backend.get_playback_status().duplicate(true)
@@ -449,7 +453,7 @@ func _request_backend_stop(from_teardown_fallback: bool) -> void:
 
 func _on_backend_state_changed(state: String, detail: Dictionary) -> void:
 	if _backend != null:
-		_tracking_frame = CameraTrackingFrame.normalize(_backend.get_tracking_frame(), _active_config)
+		_tracking_frame = CameraTrackingFrame.normalize(_backend.get_tracking_frame(), _active_config, _tracking_frame)
 		_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor())
 		_camera_options = CameraTrackingCameraOptions.normalize(_backend.get_camera_options(), _active_config)
 		_playback_status = _backend.get_playback_status().duplicate(true)
@@ -460,7 +464,7 @@ func _on_backend_state_changed(state: String, detail: Dictionary) -> void:
 	_sync_process_state()
 
 func _on_backend_tracking_updated(frame: Dictionary) -> void:
-	_tracking_frame = CameraTrackingFrame.normalize(frame, _active_config)
+	_tracking_frame = CameraTrackingFrame.normalize(frame, _active_config, _tracking_frame)
 	if _backend != null:
 		_playback_status = _backend.get_playback_status().duplicate(true)
 	tracking_updated.emit(_tracking_frame.duplicate(true))
