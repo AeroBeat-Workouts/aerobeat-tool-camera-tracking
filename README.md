@@ -74,6 +74,10 @@ godot --headless --path .testbed --script addons/aerobeat-vendor-godot-unit-test
   -gexit
 ```
 
+## Tracker config schema docs
+
+- `docs/tracker-config-schema.md` locks the v1 `aerobeat/camera_tracking_config` schema, profile defaults, and the parsing/validation boundary between this tracker repo and `aerobeat-input-camera-tracking`.
+
 ## Notes for later slices
 
 - replay/video-file sessions are now accepted through the same public `CameraTracking` service seam as live mode, but only to the minimal truthful level the paired vendor runtime can currently prove

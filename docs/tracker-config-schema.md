@@ -1,0 +1,201 @@
+# Tracker Config Schema
+
+This document is the tracker-layer companion to the input repo's cross-repo contract.
+
+- Input/gameplay owner repo: `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking`
+- Tracker/tool owner repo: `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-tool-camera-tracking`
+
+## v1 schema identity
+
+```yaml
+schema: aerobeat/camera_tracking_config
+version: 1
+profile: boxing|flow
+```
+
+The tracker layer consumes only the `aerobeat/camera_tracking_config` schema.
+
+It does **not** parse or validate `aerobeat/gesture_detection_config` files.
+
+## Canonical file producers
+
+The input repo currently authors four config assets under its repo-root `assets/` folder:
+
+- `assets/boxing.camera_tracking.yaml`
+- `assets/flow.camera_tracking.yaml`
+- `assets/boxing.gesture_detection.yaml`
+- `assets/flow.gesture_detection.yaml`
+
+Only the two `*.camera_tracking.yaml` files are tracker-layer inputs.
+
+## Ownership boundary
+
+### Owned by `aerobeat-tool-camera-tracking`
+
+- parsing of `aerobeat/camera_tracking_config`
+- validation of tracker-facing fields
+- normalization/defaulting of tracker-facing fields
+- rejection or surfacing of invalid tracker config values
+- interpretation of cadence, smoothing, hand inference, bbox recompute, association, and validity policies
+
+### Not owned by `aerobeat-tool-camera-tracking`
+
+- gameplay gesture tuning
+- boxing straight-punch thresholds
+- gesture enable/disable rules beyond tracker cost controls
+- parsing/validation of `aerobeat/gesture_detection_config`
+- selection of which profile file a gameplay consumer wants to load
+
+## Locked v1 field set
+
+```yaml
+tracking:
+  pose:
+    enabled: true
+    inference_interval_frames: 1
+    smoothing_style: lite_filtered
+  hands:
+    enabled: true|false
+    landmark_mode: lite
+    inference_interval_frames: 1
+    bbox_recompute_interval_frames: 1
+    bbox:
+      enabled: true
+    association:
+      prefer_existing_pose_side_binding: true
+      nearest_wrist_fallback: true
+    validity:
+      max_stale_frames: 2
+      reacquire_stable_frames: 2
+```
+
+## Field semantics
+
+### `tracking.pose.enabled`
+
+Enables or disables pose production for the tracker session.
+
+### `tracking.pose.inference_interval_frames`
+
+Number of frames between pose inference passes. `1` means every frame.
+
+### `tracking.pose.smoothing_style`
+
+Locked v1 enum:
+
+- `lite_filtered`
+- `lite_raw`
+
+Default: `lite_filtered`
+
+### `tracking.hands.enabled`
+
+Enables or disables hand tracking work. Flow defaults this to `false`; boxing defaults it to `true`.
+
+### `tracking.hands.landmark_mode`
+
+Locked v1 enum:
+
+- `lite`
+- `full`
+
+Default: `lite`
+
+### `tracking.hands.inference_interval_frames`
+
+Number of frames between hand inference passes. `1` means every frame.
+
+### `tracking.hands.bbox_recompute_interval_frames`
+
+Number of frames between bbox recomputations from the currently active hand landmarks. `1` means every frame.
+
+### `tracking.hands.bbox.enabled`
+
+Controls whether the tracker should surface hand bbox data in the normalized hand payload.
+
+### `tracking.hands.association.prefer_existing_pose_side_binding`
+
+When true, maintain the current hand-to-side association when the data remains valid.
+
+### `tracking.hands.association.nearest_wrist_fallback`
+
+When true, allow nearest-wrist fallback when a stable side binding is not already available.
+
+### `tracking.hands.validity.max_stale_frames`
+
+Maximum age, in frames, before a hand sample is considered stale/invalid.
+
+### `tracking.hands.validity.reacquire_stable_frames`
+
+Number of consecutive valid frames required before the tracker reports a reacquired valid hand lane.
+
+## Locked profile defaults
+
+### Boxing
+
+```yaml
+schema: aerobeat/camera_tracking_config
+version: 1
+profile: boxing
+tracking:
+  pose:
+    enabled: true
+    inference_interval_frames: 1
+    smoothing_style: lite_filtered
+  hands:
+    enabled: true
+    landmark_mode: lite
+    inference_interval_frames: 1
+    bbox_recompute_interval_frames: 1
+    bbox:
+      enabled: true
+    association:
+      prefer_existing_pose_side_binding: true
+      nearest_wrist_fallback: true
+    validity:
+      max_stale_frames: 2
+      reacquire_stable_frames: 2
+```
+
+### Flow
+
+```yaml
+schema: aerobeat/camera_tracking_config
+version: 1
+profile: flow
+tracking:
+  pose:
+    enabled: true
+    inference_interval_frames: 1
+    smoothing_style: lite_filtered
+  hands:
+    enabled: false
+    landmark_mode: lite
+    inference_interval_frames: 1
+    bbox_recompute_interval_frames: 1
+    bbox:
+      enabled: true
+    association:
+      prefer_existing_pose_side_binding: true
+      nearest_wrist_fallback: true
+    validity:
+      max_stale_frames: 2
+      reacquire_stable_frames: 2
+```
+
+## Validation responsibility
+
+The tracker repo should validate at minimum:
+
+- `schema == aerobeat/camera_tracking_config`
+- `version == 1`
+- `profile` is present and non-empty
+- `tracking.pose.inference_interval_frames >= 1`
+- `tracking.pose.smoothing_style` is a supported enum
+- `tracking.hands.landmark_mode` is a supported enum
+- `tracking.hands.inference_interval_frames >= 1`
+- `tracking.hands.bbox_recompute_interval_frames >= 1`
+- `tracking.hands.validity.max_stale_frames >= 0`
+- `tracking.hands.validity.reacquire_stable_frames >= 1`
+
+The tracker repo should ignore no unknown gesture fields because gesture files must never be handed to it in the first place.
