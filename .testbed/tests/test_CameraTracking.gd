@@ -112,6 +112,36 @@ class TeardownCountingBackend extends CameraTrackingFakeBackend:
 		stop_calls += 1
 		super.stop()
 
+class CameraOptionsFakeBackend extends CameraTrackingFakeBackend:
+	var describe_calls: Array = []
+	var raw_camera_options := {
+		"selection_policy": "framerate_first_resolution_second_format_backend",
+		"requested": {"width": 960, "height": 540, "fps": 30.0, "fourcc": "MJPG"},
+		"reported_source": "reported_v4l2",
+		"probe_strategy": "reported_v4l2_ranked_shortlist",
+		"reported_options": [
+			{"width": 1280, "height": 720, "fps": 30.0, "fourcc": "MJPG"},
+			{"width": 960, "height": 540, "fps": 15.0, "fourcc": "YUYV"}
+		],
+		"probed_options": [
+			{
+				"requested": {"width": 1280, "height": 720, "fps": 30.0, "fourcc": "MJPG"},
+				"selected": {"width": 1280, "height": 720, "fps": 30.0, "fourcc": "MJPG"},
+				"actual": {"width": 1280, "height": 720, "fps": 30.0, "fourcc": "MJPG"},
+				"fulfilled_request": true
+			}
+		],
+		"selected": {"width": 1280, "height": 720, "fps": 30.0, "fourcc": "MJPG"},
+		"actual": {"width": 1280, "height": 720, "fps": 30.0, "fourcc": "MJPG"},
+		"notes": ["reported options captured"]
+	}
+
+	func get_camera_options(camera_id: String = "") -> Dictionary:
+		describe_calls.append(camera_id)
+		var snapshot := raw_camera_options.duplicate(true)
+		snapshot["requested"]["camera_id"] = camera_id if camera_id != "" else str(last_config.get("source", {}).get("camera_id", ""))
+		return snapshot
+
 func before_each() -> void:
 	CameraTracking.clear_backend_factories()
 	_fixture_root = ProjectSettings.globalize_path("user://camera-tracking-fixture-%s" % str(Time.get_unix_time_from_system()))
@@ -297,6 +327,49 @@ func test_start_without_registered_backend_raises_structured_error() -> void:
 	assert_eq(tracker.get_last_error().get("backend"), "missing_backend")
 	assert_eq(tracker.get_last_error().get("backend_request"), "missing_backend")
 	assert_eq(tracker.get_last_error().get("backend_impl"), "missing_backend")
+	tracker.free()
+
+func test_camera_tracking_surfaces_vendor_agnostic_camera_options_contract() -> void:
+	var tracker := CameraTracking.new()
+	var backend := CameraOptionsFakeBackend.new()
+	tracker.set_backend(backend, "fake")
+	tracker.start({
+		"backend": "fake",
+		"source": {"kind": "live_camera", "camera_id": "/dev/video0"}
+	})
+
+	var options := tracker.get_camera_options()
+	assert_eq(options.get("camera_id"), "/dev/video0")
+	assert_eq(options.get("backend_request"), "fake")
+	assert_eq(options.get("backend_impl"), "fake")
+	assert_eq(options.get("selection_policy"), "framerate_first_resolution_second_format")
+	assert_eq(options.get("reported_source"), "device_report")
+	assert_eq(options.get("probe_strategy"), "reported_shortlist")
+	assert_eq(options.get("requested_mode", {}).get("pixel_format"), "MJPG")
+	assert_eq(options.get("reported_modes", [])[1].get("pixel_format"), "YUYV")
+	assert_true(options.get("probed_modes", [])[0].get("fulfilled"))
+	assert_eq(options.get("probed_modes", [])[0].get("actual_mode", {}).get("width"), 1280)
+	assert_eq(options.get("selected_mode", {}).get("fps"), 30.0)
+	assert_eq(options.get("actual_mode", {}).get("pixel_format"), "MJPG")
+	assert_eq(options.get("notes", [])[0], "reported options captured")
+	tracker.free()
+
+func test_camera_tracking_camera_options_query_accepts_explicit_camera_id() -> void:
+	var tracker := CameraTracking.new()
+	var backend := CameraOptionsFakeBackend.new()
+	tracker.set_backend(backend, "fake")
+	tracker.start({
+		"backend": "fake",
+		"source": {"kind": "live_camera", "camera_id": "/dev/video0"}
+	})
+
+	var explicit := tracker.get_camera_options("/dev/video2")
+	assert_eq(explicit.get("camera_id"), "/dev/video2")
+	assert_eq(explicit.get("requested_mode", {}).get("width"), 960)
+	assert_eq(backend.describe_calls[-1], "/dev/video2")
+
+	var cached := tracker.get_camera_options()
+	assert_eq(cached.get("camera_id"), "/dev/video0")
 	tracker.free()
 
 func test_fake_backend_drives_state_preview_and_tracking_contracts() -> void:

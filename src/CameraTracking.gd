@@ -38,6 +38,8 @@ const READINESS_KEYS := [
 const _BACKEND_RESOLUTION_MANUAL := "manual"
 const _BACKEND_RESOLUTION_REGISTRY := "registry"
 
+const CameraTrackingCameraOptions = preload("CameraTrackingCameraOptions.gd")
+
 const _MEDIAPIPE_PYTHON_BACKEND_ID := "mediapipe_python"
 const _MEDIAPIPE_PYTHON_BACKEND_SCRIPT_PATH := "res://addons/aerobeat-vendor-mediapipe-python/src/MediaPipePythonCameraTrackingBackend.gd"
 const _MEDIAPIPE_PYTHON_RUNTIME_BRIDGE_SCRIPT_PATH := "res://addons/aerobeat-vendor-mediapipe-python/src/MediaPipePythonRuntimeBridge.gd"
@@ -63,6 +65,7 @@ var _state_detail: Dictionary = CameraTrackingConfig.make_state_detail()
 var _active_config: Dictionary = CameraTrackingConfig.defaults()
 var _tracking_frame: Dictionary = CameraTrackingFrame.empty(_active_config)
 var _preview_descriptor: Dictionary = CameraTrackingPreview.detached(_active_config)
+var _camera_options: Dictionary = CameraTrackingCameraOptions.empty(_active_config)
 var _last_error: Dictionary = {}
 var _backend: CameraTrackingBackend = null
 var _attached_preview_surfaces: Array = []
@@ -100,6 +103,7 @@ func set_backend(backend: CameraTrackingBackend, backend_id: String = "") -> voi
 func start(config: Dictionary = {}) -> void:
 	_active_config = CameraTrackingConfig.normalize(config)
 	_tracking_frame = CameraTrackingFrame.empty(_active_config)
+	_camera_options = CameraTrackingCameraOptions.empty(_active_config)
 	_last_error = {}
 	if _ensure_backend_for_config(_active_config) == false:
 		_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor() if _backend != null else {})
@@ -114,6 +118,7 @@ func stop() -> void:
 func change(config: Dictionary) -> void:
 	_active_config = CameraTrackingConfig.normalize(config)
 	_tracking_frame = CameraTrackingFrame.empty(_active_config)
+	_camera_options = CameraTrackingCameraOptions.empty(_active_config)
 	_last_error = {}
 	if _ensure_backend_for_config(_active_config) == false:
 		_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor() if _backend != null else {})
@@ -142,6 +147,22 @@ func get_tracking_frame() -> Dictionary:
 
 func get_preview_descriptor() -> Dictionary:
 	return _preview_descriptor.duplicate(true)
+
+func get_camera_options(camera_id: String = "") -> Dictionary:
+	var effective_camera_id := str(camera_id).strip_edges()
+	if _backend == null and _ensure_backend_for_config(_active_config) == false:
+		return CameraTrackingCameraOptions.empty(_active_config, effective_camera_id)
+	if effective_camera_id == "" and not _camera_options.is_empty():
+		return _camera_options.duplicate(true)
+	var backend_snapshot := _backend.get_camera_options(effective_camera_id) if _backend != null else {}
+	var normalized_config := _active_config.duplicate(true)
+	if effective_camera_id != "":
+		normalized_config["source"] = normalized_config.get("source", {}).duplicate(true)
+		normalized_config["source"]["camera_id"] = effective_camera_id
+	var normalized_options := CameraTrackingCameraOptions.normalize(backend_snapshot, normalized_config, effective_camera_id)
+	if effective_camera_id == "":
+		_camera_options = normalized_options.duplicate(true)
+	return normalized_options
 
 func attach_preview_surface(node: Node) -> void:
 	if node == null or not is_instance_valid(node):
@@ -221,6 +242,7 @@ func _set_backend_internal(backend: CameraTrackingBackend, backend_id: String, r
 		_sync_from_backend()
 	else:
 		_preview_descriptor = CameraTrackingPreview.detached(_active_config)
+		_camera_options = CameraTrackingCameraOptions.empty(_active_config)
 
 func _normalize_backend_id(backend_id: Variant) -> String:
 	return str(backend_id).strip_edges()
@@ -272,6 +294,7 @@ func _sync_from_backend() -> void:
 	)
 	_tracking_frame = CameraTrackingFrame.normalize(_backend.get_tracking_frame(), _active_config)
 	_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor())
+	_camera_options = CameraTrackingCameraOptions.normalize(_backend.get_camera_options(), _active_config)
 	_last_cameras = _backend.list_cameras().duplicate(true)
 	_sync_process_state()
 
@@ -389,6 +412,7 @@ func _on_backend_state_changed(state: String, detail: Dictionary) -> void:
 	if _backend != null:
 		_tracking_frame = CameraTrackingFrame.normalize(_backend.get_tracking_frame(), _active_config)
 		_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor())
+		_camera_options = CameraTrackingCameraOptions.normalize(_backend.get_camera_options(), _active_config)
 		_last_cameras = _backend.list_cameras().duplicate(true)
 	if state != STATE_ERROR:
 		_last_error = {}

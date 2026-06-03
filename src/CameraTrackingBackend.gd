@@ -33,3 +33,6 @@ func get_tracking_frame() -> Dictionary:
 
 func get_preview_descriptor() -> Dictionary:
 	return CameraTrackingPreview.detached()
+
+func get_camera_options(_camera_id: String = "") -> Dictionary:
+	return {}

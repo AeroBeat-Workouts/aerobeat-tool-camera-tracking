@@ -30,6 +30,7 @@ Standardize these readiness facets/details now:
 - `get_active_config() -> Dictionary`
 - `get_tracking_frame() -> Dictionary`
 - `get_preview_descriptor() -> Dictionary`
+- `get_camera_options(camera_id: String = "") -> Dictionary`
 - `attach_preview_surface(node: Node) -> void`
 - `detach_preview_surface() -> void`
 - `get_last_error() -> Dictionary`
@@ -119,6 +120,37 @@ Possible backend interface shape:
 - `CameraTrackingBackend.get_state()`
 - `CameraTrackingBackend.get_tracking_frame()`
 - `CameraTrackingBackend.get_preview_descriptor()`
+- `CameraTrackingBackend.get_camera_options(camera_id := "")`
+
+## Camera options contract assumptions
+
+`get_camera_options()` should expose a tool-owned, vendor-agnostic snapshot for the currently selected or explicitly requested live camera:
+
+```gdscript
+{
+  "camera_id": "/dev/video0",
+  "backend_request": "camera_tracking_default",
+  "backend_impl": "mediapipe_python",
+  "selection_policy": "framerate_first_resolution_second_format",
+  "reported_source": "device_report",   # or probe_sweep / unknown
+  "probe_strategy": "reported_shortlist", # or probe_sweep / none
+  "requested_mode": {"width": 960, "height": 540, "fps": 30.0, "pixel_format": "MJPG"},
+  "reported_modes": [
+    {"width": 1280, "height": 720, "fps": 30.0, "pixel_format": "MJPG"}
+  ],
+  "probed_modes": [
+    {
+      "requested_mode": {"width": 1280, "height": 720, "fps": 30.0, "pixel_format": "MJPG"},
+      "selected_mode": {"width": 1280, "height": 720, "fps": 30.0, "pixel_format": "MJPG"},
+      "actual_mode": {"width": 1280, "height": 720, "fps": 30.0, "pixel_format": "MJPG"},
+      "fulfilled": true
+    }
+  ],
+  "selected_mode": {"width": 1280, "height": 720, "fps": 30.0, "pixel_format": "MJPG"},
+  "actual_mode": {"width": 1280, "height": 720, "fps": 30.0, "pixel_format": "MJPG"},
+  "notes": []
+}
+```
 
 ## Replay model assumptions
 

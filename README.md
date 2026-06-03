@@ -4,7 +4,7 @@ This repo hosts the first **tool-owned camera-tracking contract and public-servi
 
 The current slice is intentionally narrow but now truthful: `CameraTracking` remains the **vendor-agnostic camera-tracking service** and **singleton shell** that owns lifecycle, preview attachment semantics, source coordination, backend resolution policy, and normalized public tracking payloads, while repo-local proving can register a real vendor backend factory and drive both live-camera and replay/video-file paths through the public tool API. The public frame still stays conservative while becoming continuous: repeated updates can advance the latest normalized frame over time, `detail.tracking_ready` can truthfully mean the current continuous lane is active, and the public frame still carries only the minimal real landmark fields the paired vendor slice can truly prove.
 
-The tool surface is aligned to the approved API sketch in `.plans/bootstrap-architecture/CAMERA-TRACKING-API.md`, which defines the current state machine, required signals, config shape, preview ownership model, and normalized tracking-frame payload. The backend-factory seam keeps sharable ownership here at the repo root, and the tool now lazily auto-registers the mounted `mediapipe_python` vendor lane when consumers still request the default backend alias.
+The tool surface is aligned to the approved API sketch in `.plans/bootstrap-architecture/CAMERA-TRACKING-API.md`, which defines the current state machine, required signals, config shape, preview ownership model, normalized tracking-frame payload, and the tool-owned camera-options response contract. The backend-factory seam keeps sharable ownership here at the repo root, and the tool now lazily auto-registers the mounted `mediapipe_python` vendor lane when consumers still request the default backend alias.
 
 ## Current contract scope
 
@@ -20,6 +20,7 @@ The tool surface is aligned to the approved API sketch in `.plans/bootstrap-arch
 - stacked preview attachment semantics for shared live sessions: the most recent attached surface is active, and `detach_preview_surface()` restores the previous tool-owned attachment instead of collapsing the whole preview state
 - normalized tracking-frame contract for downstream consumers and tests, with real sample timestamp/source/frame-size facts when the vendor runtime can prove them
 - tool-owned landmark normalization that exposes only public `landmarks[].id/x/y/z/v` fields, keeps `tracking_state` snapshot-honest (`tracked` only when public landmarks exist), and preserves richer body/head/confidence semantics as defaults
+- tool-owned `get_camera_options(camera_id := "")` API that surfaces current live-camera mode options through a vendor-agnostic response shape (`requested_mode`, `reported_modes`, `probed_modes`, `selected_mode`, `actual_mode`) while delegating enumeration/probing to the mounted vendor backend
 - `.testbed/` proving that `backend = mediapipe_python` plus `source.kind = live_camera` or `source.kind = video_file` can flow through the real vendor runtime probe lane truthfully
 
 ## Repository details
