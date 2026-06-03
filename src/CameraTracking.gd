@@ -43,7 +43,6 @@ const CameraTrackingCameraOptions = preload("CameraTrackingCameraOptions.gd")
 const _MEDIAPIPE_PYTHON_BACKEND_ID := "mediapipe_python"
 const _MEDIAPIPE_PYTHON_BACKEND_SCRIPT_PATH := "res://addons/aerobeat-vendor-mediapipe-python/src/MediaPipePythonCameraTrackingBackend.gd"
 const _MEDIAPIPE_PYTHON_RUNTIME_BRIDGE_SCRIPT_PATH := "res://addons/aerobeat-vendor-mediapipe-python/src/MediaPipePythonRuntimeBridge.gd"
-const _SHUTDOWN_TRACE_PREFIX := "[CameraShutdownTrace][CameraTracking]"
 
 class _MediaPipePythonBackendFactory:
 	extends RefCounted
@@ -114,9 +113,6 @@ func start(config: Dictionary = {}) -> void:
 	_backend.start(_active_config)
 
 func stop() -> void:
-	_log_shutdown_trace("stop() requested", {
-		"from_teardown_fallback": false,
-	})
 	_request_backend_stop(false)
 
 func change(config: Dictionary) -> void:
@@ -397,55 +393,30 @@ func _disconnect_teardown_fallbacks() -> void:
 		_close_request_window.disconnect("close_requested", Callable(self, "_on_close_requested"))
 	_close_request_window = null
 
-func _log_shutdown_trace(marker: String, detail: Dictionary = {}) -> void:
-	print("%s %s %s" % [_SHUTDOWN_TRACE_PREFIX, marker, JSON.stringify(detail)])
-
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE:
-		_log_shutdown_trace("notification teardown callback", {
-			"what": what,
-			"notification": "NOTIFICATION_PREDELETE",
-		})
 		_request_backend_stop(true)
 
 func _exit_tree() -> void:
-	_log_shutdown_trace("_exit_tree teardown callback", {})
 	_request_backend_stop(true)
 	_disconnect_teardown_fallbacks()
 
 func _request_backend_stop(from_teardown_fallback: bool) -> void:
 	_last_error = {}
-	_log_shutdown_trace("request_backend_stop begin", {
-		"from_teardown_fallback": from_teardown_fallback,
-		"state": _state,
-		"backend_present": _backend != null,
-		"teardown_fallback_in_progress": _teardown_fallback_in_progress,
-	})
 	if _backend == null:
-		_log_shutdown_trace("request_backend_stop no backend", {})
 		_set_state(STATE_IDLE, CameraTrackingConfig.make_state_detail())
 		return
 	if from_teardown_fallback and _teardown_fallback_in_progress:
-		_log_shutdown_trace("request_backend_stop skipped reentry", {})
 		return
 	if _state == STATE_IDLE:
-		_log_shutdown_trace("request_backend_stop already idle", {})
 		return
 	if from_teardown_fallback:
 		_teardown_fallback_in_progress = true
 	if _state != STATE_STOPPING:
 		_set_state(STATE_STOPPING, CameraTrackingConfig.make_state_detail())
-	_log_shutdown_trace("backend.stop()", {
-		"backend_type": _backend.get_class(),
-		"resolved_backend_id": _resolved_backend_id,
-	})
 	_backend.stop()
 	if from_teardown_fallback:
 		_teardown_fallback_in_progress = false
-	_log_shutdown_trace("request_backend_stop end", {
-		"state": _state,
-		"teardown_fallback_in_progress": _teardown_fallback_in_progress,
-	})
 
 func _on_backend_state_changed(state: String, detail: Dictionary) -> void:
 	if _backend != null:
@@ -476,9 +447,7 @@ func _on_backend_error_raised(error_info: Dictionary) -> void:
 	error_raised.emit(_last_error.duplicate(true))
 
 func _on_tree_exiting() -> void:
-	_log_shutdown_trace("tree_exiting teardown callback", {})
 	_request_backend_stop(true)
 
 func _on_close_requested() -> void:
-	_log_shutdown_trace("close_requested teardown callback", {})
 	_request_backend_stop(true)
