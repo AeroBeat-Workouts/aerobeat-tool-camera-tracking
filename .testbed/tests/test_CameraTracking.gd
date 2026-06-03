@@ -372,6 +372,25 @@ func test_camera_tracking_camera_options_query_accepts_explicit_camera_id() -> v
 	assert_eq(cached.get("camera_id"), "/dev/video0")
 	tracker.free()
 
+func test_camera_tracking_camera_options_refreshes_stale_unknown_shell_while_running_live_camera() -> void:
+	var tracker := CameraTracking.new()
+	var backend := CameraOptionsFakeBackend.new()
+	tracker.set_backend(backend, "fake")
+	tracker.start({
+		"backend": "fake",
+		"source": {"kind": "live_camera", "camera_id": "/dev/video0"}
+	})
+
+	tracker._camera_options = CameraTrackingCameraOptions.empty(tracker.get_active_config())
+	backend.describe_calls.clear()
+
+	var refreshed := tracker.get_camera_options()
+	assert_eq(backend.describe_calls, [""])
+	assert_eq(refreshed.get("reported_source"), "device_report")
+	assert_eq(refreshed.get("selected_mode", {}).get("fps"), 30.0)
+	assert_eq(tracker._camera_options.get("reported_source"), "device_report")
+	tracker.free()
+
 func test_fake_backend_drives_state_preview_and_tracking_contracts() -> void:
 	var tracker := CameraTracking.new()
 	var backend := CameraTrackingFakeBackend.new([

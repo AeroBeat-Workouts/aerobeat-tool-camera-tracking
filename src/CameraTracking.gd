@@ -152,7 +152,7 @@ func get_camera_options(camera_id: String = "") -> Dictionary:
 	var effective_camera_id := str(camera_id).strip_edges()
 	if _backend == null and _ensure_backend_for_config(_active_config) == false:
 		return CameraTrackingCameraOptions.empty(_active_config, effective_camera_id)
-	if effective_camera_id == "" and not _camera_options.is_empty():
+	if effective_camera_id == "" and not _camera_options.is_empty() and not _should_refresh_cached_camera_options():
 		return _camera_options.duplicate(true)
 	var backend_snapshot := _backend.get_camera_options(effective_camera_id) if _backend != null else {}
 	var normalized_config := _active_config.duplicate(true)
@@ -163,6 +163,16 @@ func get_camera_options(camera_id: String = "") -> Dictionary:
 	if effective_camera_id == "":
 		_camera_options = normalized_options.duplicate(true)
 	return normalized_options
+
+func _should_refresh_cached_camera_options() -> bool:
+	if _backend == null:
+		return false
+	if _state != STATE_RUNNING:
+		return false
+	var source: Dictionary = _active_config.get("source", {})
+	if str(source.get("kind", "")) != CameraTrackingConfig.DEFAULT_SOURCE_KIND:
+		return false
+	return _camera_options == CameraTrackingCameraOptions.empty(_active_config)
 
 func attach_preview_surface(node: Node) -> void:
 	if node == null or not is_instance_valid(node):
