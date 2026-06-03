@@ -39,6 +39,7 @@ const _BACKEND_RESOLUTION_MANUAL := "manual"
 const _BACKEND_RESOLUTION_REGISTRY := "registry"
 
 const CameraTrackingCameraOptions = preload("CameraTrackingCameraOptions.gd")
+const CameraTrackingPreviewPresenter = preload("CameraTrackingPreviewPresenter.gd")
 
 const _MEDIAPIPE_PYTHON_BACKEND_ID := "mediapipe_python"
 const _MEDIAPIPE_PYTHON_BACKEND_SCRIPT_PATH := "res://addons/aerobeat-vendor-mediapipe-python/src/MediaPipePythonCameraTrackingBackend.gd"
@@ -173,6 +174,21 @@ func _should_refresh_cached_camera_options() -> bool:
 	if str(source.get("kind", "")) != CameraTrackingConfig.DEFAULT_SOURCE_KIND:
 		return false
 	return _camera_options == CameraTrackingCameraOptions.empty(_active_config)
+
+func create_preview_presenter(options: Dictionary = {}) -> CameraTrackingPreviewPresenter:
+	var presenter := CameraTrackingPreviewPresenter.new(options)
+	presenter.bind_tracking_session(self)
+	return presenter
+
+func mount_preview_presenter(parent: Node, options: Dictionary = {}) -> CameraTrackingPreviewPresenter:
+	if parent == null or not is_instance_valid(parent):
+		return null
+	var presenter := CameraTrackingPreviewPresenter.new(options)
+	parent.add_child(presenter)
+	if presenter is Control and parent is Control and not bool(options.get("preserve_layout", false)):
+		presenter.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	presenter.bind_tracking_session(self)
+	return presenter
 
 func attach_preview_surface(node: Node) -> void:
 	if node == null or not is_instance_valid(node):

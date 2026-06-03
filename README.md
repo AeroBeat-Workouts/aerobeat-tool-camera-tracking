@@ -17,6 +17,7 @@ The tool surface is aligned to the approved API sketch in `.plans/bootstrap-arch
 - `CameraTrackingBackend` interface seam for concrete integrations
 - `CameraTrackingFakeBackend` proving backend for repo-local tests
 - preview attachment contract helpers that preserve the preferred `attach_preview_surface(node)` ownership model
+- tool-owned `CameraTrackingPreviewPresenter` control plus `create_preview_presenter(options := {})` / `mount_preview_presenter(parent, options := {})` helper APIs for binding a session-owned preview surface + overlay in the right ownership layer
 - stacked preview attachment semantics for shared live sessions: the most recent attached surface is active, and `detach_preview_surface()` restores the previous tool-owned attachment instead of collapsing the whole preview state
 - normalized tracking-frame contract for downstream consumers and tests, with real sample timestamp/source/frame-size facts when the vendor runtime can prove them
 - tool-owned landmark normalization that exposes only public `landmarks[].id/x/y/z/v` fields, keeps `tracking_state` snapshot-honest (`tracked` only when public landmarks exist), and preserves richer body/head/confidence semantics as defaults

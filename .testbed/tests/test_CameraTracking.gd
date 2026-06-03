@@ -308,6 +308,121 @@ func test_preview_surface_stack_restores_previous_attachment_when_latest_detache
 	parent.free()
 	tracker.free()
 
+func test_create_preview_presenter_binds_session_and_attaches_internal_surface() -> void:
+	var tracker := CameraTracking.new()
+	var parent := Control.new()
+	parent.name = "PresenterParent"
+	get_tree().root.add_child(parent)
+
+	var presenter := tracker.mount_preview_presenter(parent)
+	await get_tree().process_frame
+
+	assert_true(presenter != null)
+	assert_eq(presenter.get_tracking_session(), tracker)
+	assert_true(tracker.get_preview_descriptor().get("attached"))
+	assert_eq(tracker.get_preview_descriptor().get("surface_path"), presenter.get_preview_surface().get_path())
+	assert_eq(int(tracker.get_preview_descriptor().get("attached_surface_count", -1)), 1)
+
+	parent.queue_free()
+	await get_tree().process_frame
+	tracker.free()
+
+func test_preview_presenter_loads_preview_image_and_maps_landmarks_in_preview_space() -> void:
+	var tracker := CameraTracking.new()
+	var backend := CameraTrackingFakeBackend.new()
+	var parent := Control.new()
+	parent.name = "PresenterParent"
+	parent.size = Vector2(200, 200)
+	get_tree().root.add_child(parent)
+
+	var presenter := tracker.mount_preview_presenter(parent, {"fit_mode": "contain"})
+	tracker.set_backend(backend, "fake")
+	tracker.start({
+		"backend": "fake",
+		"preview": {"flip_horizontal": true}
+	})
+
+	var preview_path := _write_preview_image("preview_presenter.png", 400, 200, Color(0.8, 0.2, 0.1, 1.0))
+	backend.emit_preview_descriptor({
+		"backend": "fake",
+		"enabled": true,
+		"flip_horizontal": true,
+		"image_path": preview_path,
+		"image_revision": 1,
+		"image_width": 400,
+		"image_height": 200,
+		"width": 400,
+		"height": 200
+	})
+	backend.emit_tracking_frame({
+		"timestamp_ms": 101,
+		"backend": "fake",
+		"source_kind": "live_camera",
+		"source_id": "/dev/video0",
+		"tracking_state": "tracked",
+		"frame_size": {"x": 400, "y": 200},
+		"landmarks": [
+			{"id": 0, "x": 0.25, "y": 0.25, "z": 0.0, "visibility": 0.95}
+		]
+	})
+	await get_tree().process_frame
+
+	assert_true(presenter.get_preview_surface().texture != null)
+	assert_true(presenter.get_preview_surface().flip_h)
+	assert_eq(presenter.get_content_rect(), Rect2(Vector2(0, 50), Vector2(200, 100)))
+	var mapped := presenter.map_landmark_to_preview_position(presenter.get_tracking_frame_snapshot().get("landmarks", [])[0])
+	assert_eq(mapped, Vector2(150, 75))
+
+	tracker.stop()
+	parent.queue_free()
+	await get_tree().process_frame
+	tracker.free()
+
+func test_preview_presenter_cover_content_rect_handles_crop_without_extra_flip() -> void:
+	var tracker := CameraTracking.new()
+	var backend := CameraTrackingFakeBackend.new()
+	var parent := Control.new()
+	parent.name = "PresenterParent"
+	parent.size = Vector2(200, 200)
+	get_tree().root.add_child(parent)
+
+	var presenter := tracker.mount_preview_presenter(parent, {"fit_mode": "cover"})
+	tracker.set_backend(backend, "fake")
+	tracker.start({
+		"backend": "fake",
+		"preview": {"flip_horizontal": false}
+	})
+	backend.emit_preview_descriptor({
+		"backend": "fake",
+		"enabled": true,
+		"flip_horizontal": false,
+		"image_width": 400,
+		"image_height": 200,
+		"width": 400,
+		"height": 200
+	})
+	backend.emit_tracking_frame({
+		"timestamp_ms": 202,
+		"backend": "fake",
+		"source_kind": "live_camera",
+		"source_id": "/dev/video0",
+		"tracking_state": "tracked",
+		"frame_size": {"x": 400, "y": 200},
+		"landmarks": [
+			{"id": 0, "x": 0.25, "y": 0.5, "z": 0.0, "visibility": 0.95}
+		]
+	})
+	await get_tree().process_frame
+
+	assert_eq(presenter.get_content_rect(), Rect2(Vector2(-100, 0), Vector2(400, 200)))
+	var mapped := presenter.map_landmark_to_preview_position(presenter.get_tracking_frame_snapshot().get("landmarks", [])[0])
+	assert_eq(mapped, Vector2(0, 100))
+
+	tracker.stop()
+	parent.queue_free()
+	await get_tree().process_frame
+	tracker.free()
+
 func test_start_auto_bootstraps_default_vendor_backend_when_mounted() -> void:
 	var tracker := CameraTracking.new()
 	tracker.start(_make_live_config({
@@ -746,6 +861,14 @@ func _write_fixture_video(name: String) -> String:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	file.store_string("fixture-video")
 	file.close()
+	return path
+
+func _write_preview_image(name: String, width: int, height: int, color: Color) -> String:
+	var path := _fixture_root.path_join(name)
+	var image := Image.create(maxi(width, 1), maxi(height, 1), false, Image.FORMAT_RGBA8)
+	image.fill(color)
+	var error := image.save_png(path)
+	assert_eq(error, OK)
 	return path
 
 func _deep_merge(base: Dictionary, incoming: Dictionary) -> void:
