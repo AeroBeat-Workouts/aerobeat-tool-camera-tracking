@@ -657,6 +657,141 @@ func test_preview_presenter_cover_content_rect_handles_crop_without_extra_flip()
 	await get_tree().process_frame
 	tracker.free()
 
+func test_preview_presenter_exposes_hand_debug_snapshot_and_bbox_preview_rects() -> void:
+	var tracker := CameraTracking.new()
+	var backend := CameraTrackingFakeBackend.new()
+	var parent := Control.new()
+	parent.name = "PresenterParent"
+	parent.size = Vector2(200, 200)
+	get_tree().root.add_child(parent)
+
+	var presenter := tracker.mount_preview_presenter(parent, {"fit_mode": "contain"})
+	tracker.set_backend(backend, "fake")
+	tracker.start({
+		"backend": "fake",
+		"preview": {"flip_horizontal": false},
+		"tracking": {
+			"hands": {
+				"enabled": true,
+				"landmark_mode": "full"
+			}
+		}
+	})
+	backend.emit_preview_descriptor({
+		"backend": "fake",
+		"enabled": true,
+		"flip_horizontal": false,
+		"image_width": 400,
+		"image_height": 200,
+		"width": 400,
+		"height": 200
+	})
+	backend.emit_tracking_frame({
+		"timestamp_ms": 303,
+		"backend": "fake",
+		"source_kind": "live_camera",
+		"source_id": "/dev/video0",
+		"tracking_state": "tracked",
+		"frame_size": {"x": 400, "y": 200},
+		"vendor_hand_tracking": {
+			"available": true,
+			"landmark_mode": "full"
+		},
+		"landmarks": [
+			{"id": 15, "x": 0.2, "y": 0.5, "z": 0.0, "visibility": 0.95},
+			{"id": 16, "x": 0.8, "y": 0.5, "z": 0.0, "visibility": 0.95}
+		],
+		"hands": [
+			{
+				"label": "Left",
+				"score": 0.91,
+				"landmarks": [
+					{"id": 0, "x": 0.2, "y": 0.4, "z": 0.0, "visibility": 0.9},
+					{"id": 8, "x": 0.25, "y": 0.45, "z": 0.0, "visibility": 0.8}
+				],
+				"bbox": {"x": 0.2, "y": 0.4, "width": 0.1, "height": 0.2, "area": 0.02}
+			}
+		]
+	})
+	await get_tree().process_frame
+
+	var snapshot := presenter.get_hand_debug_snapshot()
+	assert_eq(snapshot.get("frame_index"), 1)
+	assert_eq(snapshot.get("source_kind"), "live_camera")
+	assert_eq(snapshot.get("hand_tracking", {}).get("landmark_mode"), "full")
+	assert_false(snapshot.get("hands", {}).get("left", {}).get("tracking_valid"))
+	assert_eq(snapshot.get("hands", {}).get("left", {}).get("tracking_state"), "reacquiring")
+	assert_eq(snapshot.get("hands", {}).get("left", {}).get("landmark_mode"), "full")
+	assert_eq(snapshot.get("hands", {}).get("left", {}).get("bbox_preview_rect"), {
+		"x": 40.0,
+		"y": 90.0,
+		"width": 20.0,
+		"height": 20.0,
+	})
+	assert_eq(presenter.map_bbox_to_preview_rect({"x": 0.2, "y": 0.4, "width": 0.1, "height": 0.2}), Rect2(Vector2(40, 90), Vector2(20, 20)))
+	assert_eq(snapshot.get("hands", {}).get("right", {}).get("tracking_state"), "idle")
+
+	tracker.stop()
+	parent.queue_free()
+	await get_tree().process_frame
+	tracker.free()
+
+func test_preview_presenter_exposes_playback_status_alongside_hand_debug_snapshot() -> void:
+	var tracker := CameraTracking.new()
+	var backend := PlaybackStatusFakeBackend.new()
+	var parent := Control.new()
+	parent.name = "PresenterParent"
+	parent.size = Vector2(200, 200)
+	get_tree().root.add_child(parent)
+
+	var presenter := tracker.mount_preview_presenter(parent, {"fit_mode": "contain"})
+	tracker.set_backend(backend, "fake")
+	tracker.start({
+		"backend": "fake",
+		"source": {"kind": "video_file", "path": "res://clips/demo.mp4"},
+		"preview": {"flip_horizontal": false},
+		"tracking": {
+			"hands": {
+				"enabled": true
+			}
+		}
+	})
+	backend.emit_preview_descriptor({
+		"backend": "fake",
+		"enabled": true,
+		"flip_horizontal": false,
+		"image_width": 400,
+		"image_height": 200,
+		"width": 400,
+		"height": 200
+	})
+	backend.emit_tracking_frame({
+		"timestamp_ms": 404,
+		"backend": "fake",
+		"source_kind": "video_file",
+		"source_id": "res://clips/demo.mp4",
+		"tracking_state": "tracked",
+		"frame_size": {"x": 400, "y": 200},
+		"vendor_hand_tracking": {
+			"available": false
+		},
+		"hands": []
+	})
+	await get_tree().process_frame
+
+	assert_eq(presenter.get_playback_status_snapshot().get("current_time_sec"), 3.0)
+	assert_eq(presenter.get_hand_debug_snapshot().get("playback", {}).get("progress"), 0.25)
+	assert_eq(presenter.get_hand_debug_snapshot().get("hands", {}).get("left", {}).get("tracking_state"), "unavailable")
+
+	backend.advance_playback(9.0, 12.0)
+	await get_tree().process_frame
+	assert_eq(presenter.get_playback_status_snapshot().get("progress"), 0.75)
+
+	tracker.stop()
+	parent.queue_free()
+	await get_tree().process_frame
+	tracker.free()
+
 func test_start_auto_bootstraps_default_vendor_backend_when_mounted() -> void:
 	var tracker := CameraTracking.new()
 	tracker.start(_make_live_config({

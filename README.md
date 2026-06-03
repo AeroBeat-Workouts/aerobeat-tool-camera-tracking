@@ -18,6 +18,7 @@ The tool surface is aligned to the approved API sketch in `.plans/bootstrap-arch
 - `CameraTrackingFakeBackend` proving backend for repo-local tests
 - preview attachment contract helpers that preserve the preferred `attach_preview_surface(node)` ownership model
 - tool-owned `CameraTrackingPreviewPresenter` control plus `create_preview_presenter(options := {})` / `mount_preview_presenter(parent, options := {})` helper APIs for binding a session-owned preview surface + overlay in the right ownership layer
+- preview-presenter hand-debug support that renders normalized per-side hand bbox + landmark overlays for both live and replay sessions and exposes `get_hand_debug_snapshot()`, `get_playback_status_snapshot()`, and `map_bbox_to_preview_rect()` for downstream debug UIs
 - stacked preview attachment semantics for shared live sessions: the most recent attached surface is active, and `detach_preview_surface()` restores the previous tool-owned attachment instead of collapsing the whole preview state
 - normalized tracking-frame contract for downstream consumers and tests, with real sample timestamp/source/frame-size facts when the vendor runtime can prove them
 - tool-owned landmark normalization that exposes only public `landmarks[].id/x/y/z/v` fields, keeps `tracking_state` snapshot-honest, and preserves richer body/head/confidence semantics as defaults
@@ -85,4 +86,5 @@ godot --headless --path .testbed --script addons/aerobeat-vendor-godot-unit-test
 - public continuous updates are now supported only to the level the paired vendor runtime can prove; `get_tracking_frame()` surfaces the latest normalized frame and `tracking_updated` can repeat while the service remains running
 - frame-level public tracking truth is still intentionally conservative at the top level, while per-side hand payloads now expose the richer tracker-owned states needed by downstream boxing slices (`disabled`, `idle`, `unavailable`, `reacquiring`, `tracked`, `stale`, `tracking_lost`)
 - public landmarks are intentionally limited to `id/x/y/z/v`; `confidence`, `head_position`, `head_velocity`, `head_orientation`, and `skeleton` remain default/empty by design
+- the preview presenter now mirrors the normalized hand payload directly, so proving/debug consumers should treat `hands.left/right`, `hand_tracking`, and playback status as the source of truth for hand bbox visualization before any boxing-specific state machine layers are added
 - downstream consumers no longer need to paper over the current default `mediapipe_python` registration seam locally, but broader multi-vendor product/runtime registration policy may still evolve later

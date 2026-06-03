@@ -20,6 +20,19 @@ const DEFAULT_SKELETON_CONNECTIONS := [
 	[23, 25], [25, 27],
 	[24, 26], [26, 28],
 ]
+const _HAND_SIDES := ["left", "right"]
+const _HAND_SIDE_COLORS := {
+	"left": Color(0.2, 0.78, 1.0, 0.95),
+	"right": Color(1.0, 0.62, 0.18, 0.95),
+}
+const _HAND_STATE_COLORS := {
+	"disabled": Color(0.55, 0.55, 0.55, 0.45),
+	"idle": Color(0.7, 0.7, 0.7, 0.6),
+	"unavailable": Color(0.76, 0.28, 0.95, 0.9),
+	"reacquiring": Color(0.2, 0.95, 0.78, 0.9),
+	"stale": Color(1.0, 0.86, 0.2, 0.92),
+	"tracking_lost": Color(0.95, 0.25, 0.25, 0.9),
+}
 
 class _OverlayLayer:
 	extends Control
@@ -123,11 +136,65 @@ func get_preview_descriptor_snapshot() -> Dictionary:
 func get_tracking_frame_snapshot() -> Dictionary:
 	return _tracking_frame.duplicate(true)
 
+func get_playback_status_snapshot() -> Dictionary:
+	if _tracking_session == null or not is_instance_valid(_tracking_session):
+		return {}
+	if _tracking_session.has_method("get_playback_status"):
+		return _tracking_session.get_playback_status().duplicate(true)
+	return {}
+
+func get_hand_debug_snapshot() -> Dictionary:
+	var snapshot := {
+		"frame_index": int(_tracking_frame.get("frame_index", 0)),
+		"timestamp_ms": int(_tracking_frame.get("timestamp_ms", 0)),
+		"timestamp_seconds": float(_tracking_frame.get("timestamp_seconds", 0.0)),
+		"source_kind": str(_tracking_frame.get("source_kind", "")),
+		"source_id": str(_tracking_frame.get("source_id", "")),
+		"tracking_state": str(_tracking_frame.get("tracking_state", "idle")),
+		"hand_tracking": _tracking_frame.get("hand_tracking", {}).duplicate(true) if _tracking_frame.get("hand_tracking", {}) is Dictionary else {},
+		"playback": get_playback_status_snapshot(),
+		"hands": {}
+	}
+	var hands: Dictionary = _tracking_frame.get("hands", {}) if _tracking_frame.get("hands", {}) is Dictionary else {}
+	var hand_snapshot: Dictionary = snapshot.get("hands", {})
+	for side in _HAND_SIDES:
+		var payload: Dictionary = hands.get(side, {}) if hands.get(side, {}) is Dictionary else {}
+		var bbox: Dictionary = payload.get("bbox", {}) if payload.get("bbox", {}) is Dictionary else {}
+		hand_snapshot[side] = {
+			"tracking_valid": bool(payload.get("tracking_valid", false)),
+			"tracking_state": str(payload.get("tracking_state", "idle")),
+			"landmark_mode": str(payload.get("landmark_mode", "")),
+			"frame_index": int(payload.get("frame_index", 0)),
+			"timestamp_seconds": float(payload.get("timestamp_seconds", 0.0)),
+			"stale_frames": int(payload.get("stale_frames", 0)),
+			"association": payload.get("association", {}).duplicate(true) if payload.get("association", {}) is Dictionary else {},
+			"bbox": bbox.duplicate(true),
+			"bbox_preview_rect": _rect_to_dict(map_bbox_to_preview_rect(bbox)),
+			"landmark_count": (payload.get("landmarks", []) as Array).size(),
+			"has_bbox": _bbox_has_geometry(bbox),
+			"has_landmarks": not (payload.get("landmarks", []) as Array).is_empty(),
+		}
+	return snapshot
+
 func map_landmark_to_preview_position(landmark: Dictionary) -> Vector2:
 	var content_rect := get_content_rect()
 	return Vector2(
 		content_rect.position.x + clampf(float(landmark.get("x", 0.0)), 0.0, 1.0) * content_rect.size.x,
 		content_rect.position.y + clampf(float(landmark.get("y", 0.0)), 0.0, 1.0) * content_rect.size.y
+	)
+
+func map_bbox_to_preview_rect(bbox: Dictionary) -> Rect2:
+	var content_rect := get_content_rect()
+	var x := clampf(float(bbox.get("x", 0.0)), 0.0, 1.0)
+	var y := clampf(float(bbox.get("y", 0.0)), 0.0, 1.0)
+	var width := clampf(float(bbox.get("width", 0.0)), 0.0, 1.0)
+	var height := clampf(float(bbox.get("height", 0.0)), 0.0, 1.0)
+	return Rect2(
+		Vector2(
+			content_rect.position.x + x * content_rect.size.x,
+			content_rect.position.y + y * content_rect.size.y
+		),
+		Vector2(content_rect.size.x * width, content_rect.size.y * height)
 	)
 
 func _ensure_structure() -> void:
@@ -289,6 +356,10 @@ func _visible_landmarks() -> Array:
 func _draw_overlay(canvas: Control) -> void:
 	if not _overlay_visible or canvas == null:
 		return
+	_draw_pose_overlay(canvas)
+	_draw_hand_overlays(canvas)
+
+func _draw_pose_overlay(canvas: Control) -> void:
 	var landmarks := _visible_landmarks()
 	if landmarks.is_empty():
 		return
@@ -314,6 +385,49 @@ func _draw_overlay(canvas: Control) -> void:
 		)
 	for landmark: Dictionary in landmarks:
 		canvas.draw_circle(map_landmark_to_preview_position(landmark), _joint_radius, _overlay_color)
+
+func _draw_hand_overlays(canvas: Control) -> void:
+	var hands: Dictionary = _tracking_frame.get("hands", {}) if _tracking_frame.get("hands", {}) is Dictionary else {}
+	for side in _HAND_SIDES:
+		var payload: Dictionary = hands.get(side, {}) if hands.get(side, {}) is Dictionary else {}
+		if payload.is_empty():
+			continue
+		var color := _resolve_hand_overlay_color(side, payload)
+		var bbox: Dictionary = payload.get("bbox", {}) if payload.get("bbox", {}) is Dictionary else {}
+		if _bbox_has_geometry(bbox):
+			var rect := map_bbox_to_preview_rect(bbox)
+			if rect.size.x > 0.0 and rect.size.y > 0.0:
+				canvas.draw_rect(rect, color, false, _line_width, true)
+		var landmarks: Array = payload.get("landmarks", []) if payload.get("landmarks", []) is Array else []
+		for landmark_variant: Variant in landmarks:
+			if not landmark_variant is Dictionary:
+				continue
+			var landmark: Dictionary = landmark_variant
+			canvas.draw_circle(
+				map_landmark_to_preview_position(landmark),
+				maxf(_joint_radius * 0.7, 2.0),
+				color
+			)
+
+func _resolve_hand_overlay_color(side: String, payload: Dictionary) -> Color:
+	var state := str(payload.get("tracking_state", "idle"))
+	if _HAND_STATE_COLORS.has(state):
+		return _HAND_STATE_COLORS[state]
+	var base: Color = _HAND_SIDE_COLORS.get(side, DEFAULT_OVERLAY_COLOR)
+	if not bool(payload.get("tracking_valid", false)):
+		return Color(base.r, base.g, base.b, 0.55)
+	return base
+
+func _bbox_has_geometry(bbox: Dictionary) -> bool:
+	return float(bbox.get("width", 0.0)) > 0.0 and float(bbox.get("height", 0.0)) > 0.0 and float(bbox.get("area", 0.0)) > 0.0
+
+func _rect_to_dict(rect: Rect2) -> Dictionary:
+	return {
+		"x": rect.position.x,
+		"y": rect.position.y,
+		"width": rect.size.x,
+		"height": rect.size.y,
+	}
 
 func _queue_redraw() -> void:
 	queue_redraw()
