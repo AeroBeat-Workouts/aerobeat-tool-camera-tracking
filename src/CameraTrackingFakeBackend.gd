@@ -7,6 +7,7 @@ var detail: Dictionary = CameraTrackingConfig.make_state_detail()
 var tracking_frame: Dictionary = CameraTrackingFrame.empty()
 var preview_descriptor: Dictionary = CameraTrackingPreview.detached()
 var last_config: Dictionary = CameraTrackingConfig.defaults()
+var playback_status: Dictionary = {}
 
 func get_backend_id() -> String:
 	return "fake"
@@ -73,6 +74,9 @@ func get_tracking_frame() -> Dictionary:
 
 func get_preview_descriptor() -> Dictionary:
 	return preview_descriptor.duplicate(true)
+
+func get_playback_status() -> Dictionary:
+	return playback_status.duplicate(true)
 
 func emit_tracking_frame(frame: Dictionary) -> void:
 	tracking_frame = frame.duplicate(true)

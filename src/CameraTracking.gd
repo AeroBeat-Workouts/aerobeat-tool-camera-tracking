@@ -67,6 +67,7 @@ var _active_config: Dictionary = CameraTrackingConfig.defaults()
 var _tracking_frame: Dictionary = CameraTrackingFrame.empty(_active_config)
 var _preview_descriptor: Dictionary = CameraTrackingPreview.detached(_active_config)
 var _camera_options: Dictionary = CameraTrackingCameraOptions.empty(_active_config)
+var _playback_status: Dictionary = {}
 var _last_error: Dictionary = {}
 var _backend: CameraTrackingBackend = null
 var _attached_preview_surfaces: Array = []
@@ -105,6 +106,7 @@ func start(config: Dictionary = {}) -> void:
 	_active_config = CameraTrackingConfig.normalize(config)
 	_tracking_frame = CameraTrackingFrame.empty(_active_config)
 	_camera_options = CameraTrackingCameraOptions.empty(_active_config)
+	_playback_status = {}
 	_last_error = {}
 	if _ensure_backend_for_config(_active_config) == false:
 		_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor() if _backend != null else {})
@@ -120,6 +122,7 @@ func change(config: Dictionary) -> void:
 	_active_config = CameraTrackingConfig.normalize(config)
 	_tracking_frame = CameraTrackingFrame.empty(_active_config)
 	_camera_options = CameraTrackingCameraOptions.empty(_active_config)
+	_playback_status = {}
 	_last_error = {}
 	if _ensure_backend_for_config(_active_config) == false:
 		_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor() if _backend != null else {})
@@ -164,6 +167,13 @@ func get_camera_options(camera_id: String = "") -> Dictionary:
 	if effective_camera_id == "":
 		_camera_options = normalized_options.duplicate(true)
 	return normalized_options
+
+func get_playback_status() -> Dictionary:
+	if _backend == null:
+		return _playback_status.duplicate(true)
+	if _state == STATE_RUNNING:
+		_refresh_from_backend_if_running(false)
+	return _playback_status.duplicate(true)
 
 func _should_refresh_cached_camera_options() -> bool:
 	if _backend == null:
@@ -269,6 +279,7 @@ func _set_backend_internal(backend: CameraTrackingBackend, backend_id: String, r
 	else:
 		_preview_descriptor = CameraTrackingPreview.detached(_active_config)
 		_camera_options = CameraTrackingCameraOptions.empty(_active_config)
+		_playback_status = {}
 
 func _normalize_backend_id(backend_id: Variant) -> String:
 	return str(backend_id).strip_edges()
@@ -321,6 +332,7 @@ func _sync_from_backend() -> void:
 	_tracking_frame = CameraTrackingFrame.normalize(_backend.get_tracking_frame(), _active_config)
 	_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor())
 	_camera_options = CameraTrackingCameraOptions.normalize(_backend.get_camera_options(), _active_config)
+	_playback_status = _backend.get_playback_status().duplicate(true)
 	_last_cameras = _backend.list_cameras().duplicate(true)
 	_sync_process_state()
 
@@ -378,6 +390,7 @@ func _refresh_from_backend_if_running(emit_updates: bool) -> void:
 	var next_frame := CameraTrackingFrame.normalize(_backend.get_tracking_frame(), _active_config)
 	var frame_changed_now := next_frame != _tracking_frame
 	_tracking_frame = next_frame
+	_playback_status = _backend.get_playback_status().duplicate(true)
 	_sync_process_state()
 
 	if emit_updates and frame_changed_now:
@@ -439,6 +452,7 @@ func _on_backend_state_changed(state: String, detail: Dictionary) -> void:
 		_tracking_frame = CameraTrackingFrame.normalize(_backend.get_tracking_frame(), _active_config)
 		_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor())
 		_camera_options = CameraTrackingCameraOptions.normalize(_backend.get_camera_options(), _active_config)
+		_playback_status = _backend.get_playback_status().duplicate(true)
 		_last_cameras = _backend.list_cameras().duplicate(true)
 	if state != STATE_ERROR:
 		_last_error = {}
@@ -447,6 +461,8 @@ func _on_backend_state_changed(state: String, detail: Dictionary) -> void:
 
 func _on_backend_tracking_updated(frame: Dictionary) -> void:
 	_tracking_frame = CameraTrackingFrame.normalize(frame, _active_config)
+	if _backend != null:
+		_playback_status = _backend.get_playback_status().duplicate(true)
 	tracking_updated.emit(_tracking_frame.duplicate(true))
 
 func _on_backend_preview_changed(descriptor: Dictionary) -> void:

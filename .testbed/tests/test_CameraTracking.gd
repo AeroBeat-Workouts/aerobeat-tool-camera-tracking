@@ -142,6 +142,36 @@ class CameraOptionsFakeBackend extends CameraTrackingFakeBackend:
 		snapshot["requested"]["camera_id"] = camera_id if camera_id != "" else str(last_config.get("source", {}).get("camera_id", ""))
 		return snapshot
 
+class PlaybackStatusFakeBackend extends CameraTrackingFakeBackend:
+	func start(config: Dictionary) -> void:
+		playback_status = {
+			"source": str(config.get("source", {}).get("path", "res://clips/demo.mp4")),
+			"state": "playing",
+			"paused": false,
+			"current_time_sec": 3.0,
+			"duration_sec": 12.0,
+			"progress": 0.25,
+			"is_file_source": true,
+		}
+		super.start(config)
+
+	func advance_playback(current_time_sec: float, duration_sec: float) -> void:
+		var safe_duration := maxf(duration_sec, 0.0)
+		var safe_position := maxf(current_time_sec, 0.0)
+		var progress := 0.0
+		if safe_duration > 0.0:
+			progress = minf(maxf(safe_position / safe_duration, 0.0), 1.0)
+		playback_status = {
+			"source": str(last_config.get("source", {}).get("path", "res://clips/demo.mp4")),
+			"state": "playing" if safe_position < safe_duration else "ended",
+			"paused": safe_position >= safe_duration,
+			"current_time_sec": safe_position,
+			"duration_sec": safe_duration,
+			"progress": progress,
+			"is_file_source": true,
+		}
+		emit_tracking_frame(tracking_frame)
+
 func before_each() -> void:
 	CameraTracking.clear_backend_factories()
 	_fixture_root = ProjectSettings.globalize_path("user://camera-tracking-fixture-%s" % str(Time.get_unix_time_from_system()))
@@ -190,6 +220,27 @@ func test_camera_tracking_defaults_expose_contract_shell() -> void:
 	assert_eq(tracker.get_tracking_frame().get("preview_transform", {}).get("space"), "gameplay_normalized")
 	assert_false(tracker.get_preview_descriptor().get("attached"))
 	assert_eq(int(tracker.get_preview_descriptor().get("attached_surface_count", -1)), 0)
+	assert_eq(tracker.get_playback_status(), {})
+	tracker.free()
+
+func test_camera_tracking_exposes_backend_playback_status_through_public_contract() -> void:
+	var tracker := CameraTracking.new()
+	var backend := PlaybackStatusFakeBackend.new()
+	tracker.set_backend(backend, "fake")
+	tracker.start({
+		"backend": "fake",
+		"source": {"kind": "video_file", "path": "res://clips/demo.mp4"}
+	})
+
+	assert_eq(tracker.get_playback_status().get("source"), "res://clips/demo.mp4")
+	assert_eq(tracker.get_playback_status().get("current_time_sec"), 3.0)
+	assert_eq(tracker.get_playback_status().get("duration_sec"), 12.0)
+	assert_eq(tracker.get_playback_status().get("progress"), 0.25)
+	assert_true(tracker.get_playback_status().get("is_file_source"))
+
+	backend.advance_playback(6.0, 12.0)
+	assert_eq(tracker.get_playback_status().get("current_time_sec"), 6.0)
+	assert_eq(tracker.get_playback_status().get("progress"), 0.5)
 	tracker.free()
 
 func test_frame_normalization_preserves_tool_defaults_for_unproven_fields() -> void:

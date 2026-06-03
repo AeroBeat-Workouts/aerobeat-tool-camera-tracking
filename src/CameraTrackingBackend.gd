@@ -36,3 +36,6 @@ func get_preview_descriptor() -> Dictionary:
 
 func get_camera_options(_camera_id: String = "") -> Dictionary:
 	return {}
+
+func get_playback_status() -> Dictionary:
+	return {}
