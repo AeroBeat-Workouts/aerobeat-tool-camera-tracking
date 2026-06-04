@@ -495,6 +495,109 @@ func test_frame_normalization_carries_stale_hands_until_validity_budget_expires(
 	assert_false(fourth.get("hands", {}).get("left", {}).get("tracking_valid"))
 	assert_eq(fourth.get("hands", {}).get("left", {}).get("stale_frames"), 3)
 
+func test_frame_normalization_preserves_pose_side_lock_across_tracking_lost_reacquire() -> void:
+	var config := {
+		"backend": "mediapipe_python",
+		"source": {"kind": "live_camera", "camera_id": "/dev/video0"},
+		"preview": {"flip_horizontal": false},
+		"tracking": {
+			"hands": {
+				"enabled": true,
+				"validity": {
+					"max_stale_frames": 1,
+					"reacquire_stable_frames": 1
+				}
+			}
+		}
+	}
+	var first := CameraTrackingFrame.normalize({
+		"timestamp_ms": 100,
+		"landmarks": [
+			{"id": 15, "x": 0.20, "y": 0.50, "z": 0.0, "visibility": 0.9},
+			{"id": 16, "x": 0.80, "y": 0.50, "z": 0.0, "visibility": 0.9}
+		],
+		"hands": [
+			{
+				"label": "Left",
+				"score": 0.95,
+				"landmarks": [{"id": 0, "x": 0.21, "y": 0.50, "z": 0.0}],
+				"bbox": {"x": 0.18, "y": 0.42, "width": 0.08, "height": 0.16}
+			},
+			{
+				"label": "Right",
+				"score": 0.94,
+				"landmarks": [{"id": 0, "x": 0.79, "y": 0.50, "z": 0.0}],
+				"bbox": {"x": 0.75, "y": 0.42, "width": 0.08, "height": 0.16}
+			}
+		],
+		"vendor_hand_tracking": {
+			"available": true,
+			"landmark_mode": "lite",
+			"inference_backend": "mediapipe_tasks_hand_landmarker"
+		}
+	}, config)
+	var stale := CameraTrackingFrame.normalize({
+		"timestamp_ms": 200,
+		"landmarks": [
+			{"id": 15, "x": 0.20, "y": 0.50, "z": 0.0, "visibility": 0.9},
+			{"id": 16, "x": 0.80, "y": 0.50, "z": 0.0, "visibility": 0.9}
+		],
+		"hands": [],
+		"vendor_hand_tracking": {
+			"available": true,
+			"landmark_mode": "lite",
+			"inference_backend": "mediapipe_tasks_hand_landmarker"
+		}
+	}, config, first)
+	var lost := CameraTrackingFrame.normalize({
+		"timestamp_ms": 300,
+		"landmarks": [
+			{"id": 15, "x": 0.20, "y": 0.50, "z": 0.0, "visibility": 0.9},
+			{"id": 16, "x": 0.80, "y": 0.50, "z": 0.0, "visibility": 0.9}
+		],
+		"hands": [],
+		"vendor_hand_tracking": {
+			"available": true,
+			"landmark_mode": "lite",
+			"inference_backend": "mediapipe_tasks_hand_landmarker"
+		}
+	}, config, stale)
+	var reacquired := CameraTrackingFrame.normalize({
+		"timestamp_ms": 400,
+		"landmarks": [
+			{"id": 15, "x": 0.78, "y": 0.50, "z": 0.0, "visibility": 0.9},
+			{"id": 16, "x": 0.22, "y": 0.50, "z": 0.0, "visibility": 0.9}
+		],
+		"hands": [
+			{
+				"label": "Left",
+				"score": 0.96,
+				"landmarks": [{"id": 0, "x": 0.79, "y": 0.50, "z": 0.0}],
+				"bbox": {"x": 0.75, "y": 0.42, "width": 0.08, "height": 0.16}
+			},
+			{
+				"label": "Right",
+				"score": 0.93,
+				"landmarks": [{"id": 0, "x": 0.21, "y": 0.50, "z": 0.0}],
+				"bbox": {"x": 0.17, "y": 0.42, "width": 0.08, "height": 0.16}
+			}
+		],
+		"vendor_hand_tracking": {
+			"available": true,
+			"landmark_mode": "lite",
+			"inference_backend": "mediapipe_tasks_hand_landmarker"
+		}
+	}, config, lost)
+	assert_eq(stale.get("hands", {}).get("left", {}).get("tracking_state"), "stale")
+	assert_eq(lost.get("hands", {}).get("left", {}).get("tracking_state"), "tracking_lost")
+	assert_true(bool(lost.get("hands", {}).get("left", {}).get("_pose_side_locked", false)))
+	assert_eq(reacquired.get("hands", {}).get("left", {}).get("association", {}).get("method"), "prefer_existing_pose_side_binding")
+	assert_eq(reacquired.get("hands", {}).get("right", {}).get("association", {}).get("method"), "prefer_existing_pose_side_binding")
+	assert_eq(reacquired.get("hands", {}).get("left", {}).get("association", {}).get("source_label"), "left")
+	assert_eq(reacquired.get("hands", {}).get("right", {}).get("association", {}).get("source_label"), "right")
+	assert_eq(reacquired.get("hands", {}).get("left", {}).get("landmarks", [])[0].get("x"), 0.79)
+	assert_eq(reacquired.get("hands", {}).get("right", {}).get("landmarks", [])[0].get("x"), 0.21)
+
 func test_attach_and_detach_preview_surface_updates_descriptor() -> void:
 	var tracker := CameraTracking.new()
 	var parent := Node.new()

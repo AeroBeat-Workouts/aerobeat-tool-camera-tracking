@@ -296,7 +296,8 @@ static func _normalize_hands_by_side(
 				"association": _association_from_candidate(side, candidate, assignment),
 				"landmarks": candidate.get("landmarks", []).duplicate(true),
 				"bbox": candidate.get("bbox", _empty_bbox()).duplicate(true),
-				"_stable_valid_frames": stable_valid_frames
+				"_stable_valid_frames": stable_valid_frames,
+				"_pose_side_locked": bool(assignment.get("pose_side_locked", false))
 			}
 			continue
 		var stale_frames: int = int(previous_payload.get("stale_frames", 0)) + 1
@@ -312,11 +313,13 @@ static func _normalize_hands_by_side(
 				"association": previous_payload.get("association", _empty_association(side)).duplicate(true),
 				"landmarks": previous_payload.get("landmarks", []).duplicate(true),
 				"bbox": previous_payload.get("bbox", _empty_bbox()).duplicate(true),
-				"_stable_valid_frames": int(previous_payload.get("_stable_valid_frames", 0))
+				"_stable_valid_frames": int(previous_payload.get("_stable_valid_frames", 0)),
+				"_pose_side_locked": bool(previous_payload.get("_pose_side_locked", false))
 			}
 		elif _has_prior_hand_sample(previous_payload):
 			normalized[side]["tracking_state"] = "tracking_lost"
 			normalized[side]["stale_frames"] = stale_frames
+			normalized[side]["_pose_side_locked"] = bool(previous_payload.get("_pose_side_locked", false))
 	return normalized
 
 static func _normalize_hand_candidates(raw_hands: Array, flip_horizontal: bool, bbox_enabled: bool) -> Array:
@@ -396,15 +399,22 @@ static func _assign_hand_candidates(candidates: Array, pose_landmarks: Array, ha
 	if bool(association.get("prefer_existing_pose_side_binding", true)):
 		for side in _HAND_SIDES:
 			var previous_payload: Dictionary = previous_hands.get(side, {}) if previous_hands.get(side, {}) is Dictionary else {}
-			var previous_anchor := _hand_payload_anchor(previous_payload)
-			if previous_anchor.is_empty():
+			var wrist_anchor := pose_wrists.get(side, {}) if pose_wrists.get(side, {}) is Dictionary else {}
+			var match_anchor := {}
+			var pose_side_locked := bool(previous_payload.get("_pose_side_locked", false))
+			if pose_side_locked and wrist_anchor.is_empty() == false:
+				match_anchor = wrist_anchor
+			else:
+				match_anchor = _hand_payload_anchor(previous_payload)
+			if match_anchor.is_empty():
 				continue
-			var match_index := _nearest_candidate_index(candidates, unassigned_indices, previous_anchor)
+			var match_index := _nearest_candidate_index(candidates, unassigned_indices, match_anchor)
 			if match_index >= 0:
 				assignments[side] = {
 					"candidate": candidates[match_index],
 					"method": "prefer_existing_pose_side_binding",
-					"distance": _distance_between_points(previous_anchor, candidates[match_index].get("anchor", {}))
+					"distance": _distance_between_points(match_anchor, candidates[match_index].get("anchor", {})),
+					"pose_side_locked": pose_side_locked or wrist_anchor.is_empty() == false
 				}
 				unassigned_indices.erase(match_index)
 	if bool(association.get("nearest_wrist_fallback", true)):
@@ -419,7 +429,8 @@ static func _assign_hand_candidates(candidates: Array, pose_landmarks: Array, ha
 				assignments[side] = {
 					"candidate": candidates[match_index],
 					"method": "nearest_wrist_fallback",
-					"distance": _distance_between_points(wrist_anchor, candidates[match_index].get("anchor", {}))
+					"distance": _distance_between_points(wrist_anchor, candidates[match_index].get("anchor", {})),
+					"pose_side_locked": true
 				}
 				unassigned_indices.erase(match_index)
 	return assignments
