@@ -7,7 +7,13 @@ signal preview_changed(descriptor: Dictionary)
 signal cameras_changed(cameras: Array)
 signal error_raised(error_info: Dictionary)
 
-const VERSION := "0.2.0"
+const VERSION := "0.3.0"
+
+const TRANSPORT_MODE_EXACT_DECODED_FRAME := CameraTrackingBackend.TRANSPORT_MODE_EXACT_DECODED_FRAME
+const TRANSPORT_MODE_EXACT_OWNED_FRAME_INDEX := CameraTrackingBackend.TRANSPORT_MODE_EXACT_OWNED_FRAME_INDEX
+const TRANSPORT_MODE_APPROX_TIME_SEEK := CameraTrackingBackend.TRANSPORT_MODE_APPROX_TIME_SEEK
+const REPLAY_TRANSPORT_UNSUPPORTED_CODE := CameraTrackingBackend.TRANSPORT_UNSUPPORTED_CODE
+const REPLAY_TRANSPORT_INACTIVE_CODE := CameraTrackingBackend.REPLAY_TRANSPORT_INACTIVE_CODE
 
 const STATE_IDLE := "idle"
 const STATE_STARTING := "starting"
@@ -68,6 +74,8 @@ var _tracking_frame: Dictionary = CameraTrackingFrame.empty(_active_config)
 var _preview_descriptor: Dictionary = CameraTrackingPreview.detached(_active_config)
 var _camera_options: Dictionary = CameraTrackingCameraOptions.empty(_active_config)
 var _playback_status: Dictionary = {}
+var _replay_transport_capabilities: Dictionary = {}
+var _replay_transport_status: Dictionary = {}
 var _last_error: Dictionary = {}
 var _backend: CameraTrackingBackend = null
 var _attached_preview_surfaces: Array = []
@@ -107,6 +115,8 @@ func start(config: Dictionary = {}) -> void:
 	_tracking_frame = CameraTrackingFrame.empty(_active_config)
 	_camera_options = CameraTrackingCameraOptions.empty(_active_config)
 	_playback_status = {}
+	_replay_transport_capabilities = {}
+	_replay_transport_status = {}
 	_last_error = {}
 	if _ensure_backend_for_config(_active_config) == false:
 		_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor() if _backend != null else {})
@@ -125,6 +135,8 @@ func change(config: Dictionary) -> void:
 	_tracking_frame = CameraTrackingFrame.empty(_active_config)
 	_camera_options = CameraTrackingCameraOptions.empty(_active_config)
 	_playback_status = {}
+	_replay_transport_capabilities = {}
+	_replay_transport_status = {}
 	_last_error = {}
 	if _ensure_backend_for_config(_active_config) == false:
 		_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor() if _backend != null else {})
@@ -176,6 +188,42 @@ func get_playback_status() -> Dictionary:
 	if _state == STATE_RUNNING:
 		_refresh_from_backend_if_running(false)
 	return _playback_status.duplicate(true)
+
+func get_replay_transport_capabilities() -> Dictionary:
+	if _backend == null:
+		return _replay_transport_capabilities.duplicate(true)
+	if _state == STATE_RUNNING:
+		_refresh_from_backend_if_running(false)
+	return _replay_transport_capabilities.duplicate(true)
+
+func get_replay_transport_status() -> Dictionary:
+	if _backend == null:
+		return _replay_transport_status.duplicate(true)
+	if _state == STATE_RUNNING:
+		_refresh_from_backend_if_running(false)
+	return _replay_transport_status.duplicate(true)
+
+func step_replay_frames(delta_frames: int) -> Dictionary:
+	if _backend == null:
+		return _replay_transport_failure(REPLAY_TRANSPORT_INACTIVE_CODE, "step_replay_frames requires an active replay backend.", {
+			"delta_frames": delta_frames
+		})
+	var result: Dictionary = _backend.step_replay_frames(delta_frames)
+	_sync_replay_transport_from_backend()
+	if _state == STATE_RUNNING and bool(result.get(CameraTrackingBackend.RESULT_SUCCESS, false)):
+		_refresh_from_backend_if_running(true)
+	return result.duplicate(true)
+
+func seek_replay_to_frame(frame_index: int) -> Dictionary:
+	if _backend == null:
+		return _replay_transport_failure(REPLAY_TRANSPORT_INACTIVE_CODE, "seek_replay_to_frame requires an active replay backend.", {
+			"frame_index": frame_index
+		})
+	var result: Dictionary = _backend.seek_replay_to_frame(frame_index)
+	_sync_replay_transport_from_backend()
+	if _state == STATE_RUNNING and bool(result.get(CameraTrackingBackend.RESULT_SUCCESS, false)):
+		_refresh_from_backend_if_running(true)
+	return result.duplicate(true)
 
 func _should_refresh_cached_camera_options() -> bool:
 	if _backend == null:
@@ -282,6 +330,8 @@ func _set_backend_internal(backend: CameraTrackingBackend, backend_id: String, r
 		_preview_descriptor = CameraTrackingPreview.detached(_active_config)
 		_camera_options = CameraTrackingCameraOptions.empty(_active_config)
 		_playback_status = {}
+		_replay_transport_capabilities = {}
+		_replay_transport_status = {}
 
 func _normalize_backend_id(backend_id: Variant) -> String:
 	return str(backend_id).strip_edges()
@@ -335,6 +385,7 @@ func _sync_from_backend() -> void:
 	_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor())
 	_camera_options = CameraTrackingCameraOptions.normalize(_backend.get_camera_options(), _active_config)
 	_playback_status = _backend.get_playback_status().duplicate(true)
+	_sync_replay_transport_from_backend()
 	_last_cameras = _backend.list_cameras().duplicate(true)
 	_sync_process_state()
 
@@ -393,6 +444,7 @@ func _refresh_from_backend_if_running(emit_updates: bool) -> void:
 	var frame_changed_now := next_frame != _tracking_frame
 	_tracking_frame = next_frame
 	_playback_status = _backend.get_playback_status().duplicate(true)
+	_sync_replay_transport_from_backend()
 	_sync_process_state()
 
 	if emit_updates and frame_changed_now:
@@ -400,6 +452,23 @@ func _refresh_from_backend_if_running(emit_updates: bool) -> void:
 
 func _sync_process_state() -> void:
 	set_process(_backend != null and _state == STATE_RUNNING and is_inside_tree())
+
+
+func _sync_replay_transport_from_backend() -> void:
+	if _backend == null:
+		_replay_transport_capabilities = {}
+		_replay_transport_status = {}
+		return
+	_replay_transport_capabilities = _backend.get_replay_transport_capabilities().duplicate(true)
+	_replay_transport_status = _backend.get_replay_transport_status().duplicate(true)
+
+func _replay_transport_failure(code: String, message: String, detail: Dictionary = {}) -> Dictionary:
+	return {
+		CameraTrackingBackend.RESULT_SUCCESS: false,
+		CameraTrackingBackend.RESULT_CODE: code,
+		CameraTrackingBackend.RESULT_MESSAGE: message,
+		CameraTrackingBackend.RESULT_DETAIL: detail.duplicate(true),
+	}
 
 func _connect_teardown_fallbacks() -> void:
 	var tree := get_tree()
@@ -450,12 +519,6 @@ func _request_backend_stop(from_teardown_fallback: bool) -> void:
 		_teardown_fallback_in_progress = false
 
 func _on_backend_state_changed(state: String, detail: Dictionary) -> void:
-	if _backend != null:
-		_tracking_frame = CameraTrackingFrame.normalize(_backend.get_tracking_frame(), _active_config, _tracking_frame)
-		_preview_descriptor = _compose_preview_descriptor(_backend.get_preview_descriptor())
-		_camera_options = CameraTrackingCameraOptions.normalize(_backend.get_camera_options(), _active_config)
-		_playback_status = _backend.get_playback_status().duplicate(true)
-		_last_cameras = _backend.list_cameras().duplicate(true)
 	if state != STATE_ERROR:
 		_last_error = {}
 	_set_state(state, detail)
@@ -465,6 +528,7 @@ func _on_backend_tracking_updated(frame: Dictionary) -> void:
 	_tracking_frame = CameraTrackingFrame.normalize(frame, _active_config, _tracking_frame)
 	if _backend != null:
 		_playback_status = _backend.get_playback_status().duplicate(true)
+		_sync_replay_transport_from_backend()
 	tracking_updated.emit(_tracking_frame.duplicate(true))
 
 func _on_backend_preview_changed(descriptor: Dictionary) -> void:

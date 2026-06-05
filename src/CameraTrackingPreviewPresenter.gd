@@ -143,6 +143,20 @@ func get_playback_status_snapshot() -> Dictionary:
 		return _tracking_session.get_playback_status().duplicate(true)
 	return {}
 
+func get_replay_transport_capabilities_snapshot() -> Dictionary:
+	if _tracking_session == null or not is_instance_valid(_tracking_session):
+		return {}
+	if _tracking_session.has_method("get_replay_transport_capabilities"):
+		return _tracking_session.get_replay_transport_capabilities().duplicate(true)
+	return {}
+
+func get_replay_transport_status_snapshot() -> Dictionary:
+	if _tracking_session == null or not is_instance_valid(_tracking_session):
+		return {}
+	if _tracking_session.has_method("get_replay_transport_status"):
+		return _tracking_session.get_replay_transport_status().duplicate(true)
+	return {}
+
 func get_hand_debug_snapshot() -> Dictionary:
 	var snapshot := {
 		"frame_index": int(_tracking_frame.get("frame_index", 0)),
@@ -153,6 +167,8 @@ func get_hand_debug_snapshot() -> Dictionary:
 		"tracking_state": str(_tracking_frame.get("tracking_state", "idle")),
 		"hand_tracking": _tracking_frame.get("hand_tracking", {}).duplicate(true) if _tracking_frame.get("hand_tracking", {}) is Dictionary else {},
 		"playback": get_playback_status_snapshot(),
+		"replay_transport_capabilities": get_replay_transport_capabilities_snapshot(),
+		"replay_transport": get_replay_transport_status_snapshot(),
 		"hands": {}
 	}
 	var hands: Dictionary = _tracking_frame.get("hands", {}) if _tracking_frame.get("hands", {}) is Dictionary else {}

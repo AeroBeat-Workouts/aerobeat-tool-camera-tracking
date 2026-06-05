@@ -172,6 +172,66 @@ class PlaybackStatusFakeBackend extends CameraTrackingFakeBackend:
 		}
 		emit_tracking_frame(tracking_frame)
 
+class ReplayTransportFakeBackend extends PlaybackStatusFakeBackend:
+	var replay_transport_capabilities := {
+		"transport_mode": CameraTracking.TRANSPORT_MODE_EXACT_OWNED_FRAME_INDEX,
+		"can_step_forward": true,
+		"can_step_backward": true,
+		"can_seek_frame": true,
+		"nominal_fps": 30.0,
+		"frame_duration_sec": 1.0 / 30.0,
+		"exactness_note": "Fake backend owns a stable replay frame index for regression coverage.",
+		"limitation_code": "",
+	}
+	var replay_transport_status := {
+		"transport_mode": CameraTracking.TRANSPORT_MODE_EXACT_OWNED_FRAME_INDEX,
+		"can_step_forward": true,
+		"can_step_backward": true,
+		"can_seek_frame": true,
+		"frame_index": 90,
+		"frame_count": 360,
+		"nominal_fps": 30.0,
+		"frame_duration_sec": 1.0 / 30.0,
+		"paused": true,
+		"position_sec": 3.0,
+		"duration_sec": 12.0,
+		"exactness_note": "Fake backend owns a stable replay frame index for regression coverage.",
+		"limitation_code": "",
+	}
+	var step_frame_requests: Array = []
+	var seek_frame_requests: Array = []
+
+	func get_replay_transport_capabilities() -> Dictionary:
+		return replay_transport_capabilities.duplicate(true)
+
+	func get_replay_transport_status() -> Dictionary:
+		return replay_transport_status.duplicate(true)
+
+	func step_replay_frames(delta_frames: int) -> Dictionary:
+		step_frame_requests.append(delta_frames)
+		var next_index := int(replay_transport_status.get("frame_index", 0)) + delta_frames
+		return seek_replay_to_frame(next_index)
+
+	func seek_replay_to_frame(frame_index: int) -> Dictionary:
+		seek_frame_requests.append(frame_index)
+		replay_transport_status["frame_index"] = frame_index
+		replay_transport_status["paused"] = true
+		var nominal_fps := float(replay_transport_status.get("nominal_fps", 30.0))
+		var position_sec := float(frame_index) / nominal_fps if nominal_fps > 0.0 else 0.0
+		replay_transport_status["position_sec"] = position_sec
+		playback_status["paused"] = true
+		playback_status["state"] = "paused"
+		playback_status["current_time_sec"] = position_sec
+		playback_status["progress"] = position_sec / maxf(float(playback_status.get("duration_sec", 0.0)), 0.0001)
+		tracking_frame["frame_index"] = frame_index
+		tracking_frame["timestamp_ms"] = int(round(position_sec * 1000.0))
+		emit_tracking_frame(tracking_frame)
+		return {
+			CameraTrackingBackend.RESULT_SUCCESS: true,
+			"frame_index": frame_index,
+			"position_sec": position_sec,
+		}
+
 func before_each() -> void:
 	CameraTracking.clear_backend_factories()
 	_fixture_root = ProjectSettings.globalize_path("user://camera-tracking-fixture-%s" % str(Time.get_unix_time_from_system()))
@@ -213,7 +273,7 @@ func test_backend_request_defaults_to_neutral_alias_and_resolves_to_vendor_backe
 
 func test_camera_tracking_defaults_expose_contract_shell() -> void:
 	var tracker := CameraTracking.new()
-	assert_eq(CameraTracking.VERSION, "0.2.0")
+	assert_eq(CameraTracking.VERSION, "0.3.0")
 	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_IDLE)
 	assert_eq(tracker.get_state().get("detail", {}).keys().size(), 4)
 	assert_eq(tracker.get_tracking_frame().get("tracking_state"), "idle")
@@ -241,6 +301,60 @@ func test_camera_tracking_exposes_backend_playback_status_through_public_contrac
 	backend.advance_playback(6.0, 12.0)
 	assert_eq(tracker.get_playback_status().get("current_time_sec"), 6.0)
 	assert_eq(tracker.get_playback_status().get("progress"), 0.5)
+	tracker.free()
+
+
+func test_camera_tracking_derives_truthful_replay_transport_fallback_from_backend_playback_status() -> void:
+	var tracker := CameraTracking.new()
+	var backend := PlaybackStatusFakeBackend.new()
+	tracker.set_backend(backend, "fake")
+	tracker.start({
+		"backend": "fake",
+		"source": {"kind": "video_file", "path": "res://clips/demo.mp4"}
+	})
+
+	var capabilities := tracker.get_replay_transport_capabilities()
+	assert_eq(String(capabilities.get("transport_mode", "")), CameraTracking.TRANSPORT_MODE_APPROX_TIME_SEEK)
+	assert_false(bool(capabilities.get("can_step_forward", true)))
+	assert_false(bool(capabilities.get("can_seek_frame", true)))
+	assert_eq(String(capabilities.get("limitation_code", "")), CameraTracking.REPLAY_TRANSPORT_UNSUPPORTED_CODE)
+
+	var status := tracker.get_replay_transport_status()
+	assert_eq(float(status.get("position_sec", -1.0)), 3.0)
+	assert_eq(float(status.get("duration_sec", -1.0)), 12.0)
+	assert_false(bool(status.get("paused", true)))
+
+	var result := tracker.step_replay_frames(1)
+	assert_false(bool(result.get(CameraTrackingBackend.RESULT_SUCCESS, true)))
+	assert_eq(String(result.get(CameraTrackingBackend.RESULT_CODE, "")), CameraTracking.REPLAY_TRANSPORT_UNSUPPORTED_CODE)
+	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_RUNNING)
+	assert_eq(tracker.get_playback_status().get("current_time_sec"), 3.0)
+	tracker.free()
+
+func test_camera_tracking_delegates_exact_replay_transport_methods_through_public_contract() -> void:
+	var tracker := CameraTracking.new()
+	var backend := ReplayTransportFakeBackend.new()
+	tracker.set_backend(backend, "fake")
+	tracker.start({
+		"backend": "fake",
+		"source": {"kind": "video_file", "path": "res://clips/demo.mp4"}
+	})
+
+	assert_eq(String(tracker.get_replay_transport_capabilities().get("transport_mode", "")), CameraTracking.TRANSPORT_MODE_EXACT_OWNED_FRAME_INDEX)
+	assert_eq(int(tracker.get_replay_transport_status().get("frame_index", -1)), 90)
+
+	var step_result := tracker.step_replay_frames(3)
+	assert_true(bool(step_result.get(CameraTrackingBackend.RESULT_SUCCESS, false)))
+	assert_eq(backend.step_frame_requests, [3])
+	assert_eq(backend.seek_frame_requests, [93])
+	assert_eq(int(tracker.get_replay_transport_status().get("frame_index", -1)), 93)
+	assert_eq(float(tracker.get_playback_status().get("current_time_sec", -1.0)), 3.1)
+
+	var seek_result := tracker.seek_replay_to_frame(120)
+	assert_true(bool(seek_result.get(CameraTrackingBackend.RESULT_SUCCESS, false)))
+	assert_eq(backend.seek_frame_requests, [93, 120])
+	assert_eq(int(tracker.get_replay_transport_status().get("frame_index", -1)), 120)
+	assert_eq(int(tracker.get_tracking_frame().get("frame_index", -1)), 120)
 	tracker.free()
 
 func test_frame_normalization_preserves_tool_defaults_for_unproven_fields() -> void:
@@ -978,6 +1092,8 @@ func test_preview_presenter_exposes_playback_status_alongside_hand_debug_snapsho
 
 	assert_eq(presenter.get_playback_status_snapshot().get("current_time_sec"), 3.0)
 	assert_eq(presenter.get_hand_debug_snapshot().get("playback", {}).get("progress"), 0.25)
+	assert_eq(String(presenter.get_replay_transport_status_snapshot().get("transport_mode", "")), CameraTracking.TRANSPORT_MODE_APPROX_TIME_SEEK)
+	assert_eq(String(presenter.get_hand_debug_snapshot().get("replay_transport", {}).get("limitation_code", "")), CameraTracking.REPLAY_TRANSPORT_UNSUPPORTED_CODE)
 	assert_eq(presenter.get_hand_debug_snapshot().get("hands", {}).get("left", {}).get("tracking_state"), "unavailable")
 
 	backend.advance_playback(9.0, 12.0)

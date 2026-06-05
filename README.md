@@ -18,7 +18,7 @@ The tool surface is aligned to the approved API sketch in `.plans/bootstrap-arch
 - `CameraTrackingFakeBackend` proving backend for repo-local tests
 - preview attachment contract helpers that preserve the preferred `attach_preview_surface(node)` ownership model
 - tool-owned `CameraTrackingPreviewPresenter` control plus `create_preview_presenter(options := {})` / `mount_preview_presenter(parent, options := {})` helper APIs for binding a session-owned preview surface + overlay in the right ownership layer
-- preview-presenter hand-debug support that renders normalized per-side hand bbox + landmark overlays for both live and replay sessions and exposes `get_hand_debug_snapshot()`, `get_playback_status_snapshot()`, and `map_bbox_to_preview_rect()` for downstream debug UIs
+- preview-presenter hand-debug support that renders normalized per-side hand bbox + landmark overlays for both live and replay sessions and exposes `get_hand_debug_snapshot()`, `get_playback_status_snapshot()`, `get_replay_transport_capabilities_snapshot()`, `get_replay_transport_status_snapshot()`, and `map_bbox_to_preview_rect()` for downstream debug UIs
 - stacked preview attachment semantics for shared live sessions: the most recent attached surface is active, and `detach_preview_surface()` restores the previous tool-owned attachment instead of collapsing the whole preview state
 - normalized tracking-frame contract for downstream consumers and tests, with real sample timestamp/source/frame-size facts when the vendor runtime can prove them
 - tool-owned landmark normalization that exposes only public `landmarks[].id/x/y/z/v` fields, keeps `tracking_state` snapshot-honest, and preserves richer body/head/confidence semantics as defaults
@@ -30,7 +30,7 @@ The tool surface is aligned to the approved API sketch in `.plans/bootstrap-arch
 
 - **Type:** AeroBeat tool package
 - **License:** **Mozilla Public License 2.0 (MPL 2.0)**
-- **Implementation status:** truthful public-service slice for backend registration/resolution, runtime probe startup, camera inventory, preview facts, continuous update polling, normalized pose landmarks, and tracker-layer hand transport. Public frames now surface `timestamp_ms`, `timestamp_seconds`, `frame_index`, source identity, `frame_size`, public landmark `id/x/y/z/v`, tracker-facing pose/hand config defaults, and normalized per-side hand payloads with association + stale/reacquire semantics. Replay/video-file sessions still flow through the same public `CameraTracking` service/preview/state seam as live mode, while richer body/head/confidence guarantees remain deferred
+- **Implementation status:** truthful public-service slice for backend registration/resolution, runtime probe startup, camera inventory, preview facts, continuous update polling, normalized pose landmarks, tracker-layer hand transport, and replay transport exposure. Public frames now surface `timestamp_ms`, `timestamp_seconds`, `frame_index`, source identity, `frame_size`, public landmark `id/x/y/z/v`, tracker-facing pose/hand config defaults, normalized per-side hand payloads with association + stale/reacquire semantics, and replay transport capability/status delegation via `get_replay_transport_capabilities()`, `get_replay_transport_status()`, `step_replay_frames(...)`, and `seek_replay_to_frame(...)`. Replay/video-file sessions still flow through the same public `CameraTracking` service/preview/state seam as live mode, while richer body/head/confidence guarantees remain deferred
 
 ## GodotEnv development flow
 
@@ -82,7 +82,8 @@ godot --headless --path .testbed --script addons/aerobeat-vendor-godot-unit-test
 
 ## Notes for later slices
 
-- replay/video-file sessions are now accepted through the same public `CameraTracking` service seam as live mode, but only to the minimal truthful level the paired vendor runtime can currently prove
+- replay/video-file sessions are now accepted through the same public `CameraTracking` service seam as live mode, and replay consumers can now inspect explicit transport capabilities/status instead of relying only on passive playback snapshots
+- the default transport fallback remains truthful: backends that only prove paused/time seek report `transport_mode=approx_time_seek` and explicitly refuse frame-addressed stepping until an exact lower layer exists
 - public continuous updates are now supported only to the level the paired vendor runtime can prove; `get_tracking_frame()` surfaces the latest normalized frame and `tracking_updated` can repeat while the service remains running
 - frame-level public tracking truth is still intentionally conservative at the top level, while per-side hand payloads now expose the richer tracker-owned states needed by downstream boxing slices (`disabled`, `idle`, `unavailable`, `reacquiring`, `tracked`, `stale`, `tracking_lost`)
 - public landmarks are intentionally limited to `id/x/y/z/v`; `confidence`, `head_position`, `head_velocity`, `head_orientation`, and `skeleton` remain default/empty by design
