@@ -65,8 +65,8 @@ tracking:
       prefer_existing_pose_side_binding: true
       nearest_wrist_fallback: true
     validity:
-      max_stale_frames: 2
-      reacquire_stable_frames: 2
+      max_stale_ms: 80
+      reacquire_stable_ms: 40
     grace:
       enabled: true
       position_decay: 1.0
@@ -125,25 +125,25 @@ When true, maintain the current hand-to-side association when the data remains v
 
 When true, allow nearest-wrist fallback when a stable side binding is not already available.
 
-### `tracking.hands.validity.max_stale_frames`
+### `tracking.hands.validity.max_stale_ms`
 
-Maximum age, in frames, before a hand sample is considered stale/invalid.
+Maximum age, in milliseconds since the last observed hand sample, before a hand lane becomes stale/invalid.
 
-### `tracking.hands.validity.reacquire_stable_frames`
+### `tracking.hands.validity.reacquire_stable_ms`
 
-Number of consecutive valid frames required before the tracker reports a reacquired valid hand lane.
+Milliseconds of continuous valid hand observations required before the tracker reports a reacquired valid hand lane. `0` makes reacquire immediate.
 
 ### `tracking.hands.grace.enabled`
 
-When true, missing hand detections stay in a tracker-owned `grace` state for up to `tracking.hands.validity.max_stale_frames` frames instead of surfacing as plain stale carry-forward.
+When true, missing hand detections stay in a tracker-owned `grace` state for up to `tracking.hands.validity.max_stale_ms` milliseconds instead of surfacing as plain stale carry-forward.
 
 ### `tracking.hands.grace.position_decay`
 
-Per-grace-frame multiplier applied to the carried bbox movement delta after each prediction step. `1.0` keeps constant motion; `0.0` stops positional extrapolation after the first grace frame.
+Per-grace-step multiplier applied to the carried bbox movement delta after each prediction step. `1.0` keeps constant motion; `0.0` stops positional extrapolation after the first grace step.
 
 ### `tracking.hands.grace.size_decay`
 
-Per-grace-frame multiplier applied to the carried bbox width/height growth delta after each prediction step. `1.0` keeps constant growth/shrink trend; `0.0` freezes size after the first grace frame.
+Per-grace-step multiplier applied to the carried bbox width/height growth delta after each prediction step. `1.0` keeps constant growth/shrink trend; `0.0` freezes size after the first grace step.
 
 ## Normalized hand output contract
 
@@ -156,9 +156,13 @@ hands:
     tracking_state: disabled|idle|unavailable|reacquiring|tracked|grace|stale|tracking_lost
     landmark_mode: lite|full
     frame_index: <int>
+    timestamp_ms: <int>
     timestamp_seconds: <float>
     stale_frames: <int>
+    stale_ms: <int>
     grace_frames: <int>
+    grace_ms: <int>
+    stable_ms: <int>
     predicted: true|false
     association:
       side: left|right
@@ -188,7 +192,7 @@ Important semantics:
 - preview mirroring is applied in the tracker layer so normalized hand coordinates stay aligned with normalized pose coordinates
 - `tracking_valid` becomes `false` during `reacquiring`, `unavailable`, and `tracking_lost`
 - `grace` means the tool predicted the hand bbox/landmark placement from the recent tracker-owned trend; these frames still count as valid hand samples for downstream consumers
-- grace/stale carry-forward is allowed only up to `tracking.hands.validity.max_stale_frames`; after that the lane becomes `tracking_lost`
+- grace/stale carry-forward is allowed only up to `tracking.hands.validity.max_stale_ms`; after that the lane becomes `tracking_lost`
 - if the vendor explicitly reports hand inference unavailable, the tracker must surface `unavailable` instead of pretending stale/tracked data exists
 
 ## Locked profile defaults
@@ -215,8 +219,8 @@ tracking:
       prefer_existing_pose_side_binding: true
       nearest_wrist_fallback: true
     validity:
-      max_stale_frames: 2
-      reacquire_stable_frames: 2
+      max_stale_ms: 80
+      reacquire_stable_ms: 40
     grace:
       enabled: true
       position_decay: 1.0
@@ -245,8 +249,8 @@ tracking:
       prefer_existing_pose_side_binding: true
       nearest_wrist_fallback: true
     validity:
-      max_stale_frames: 2
-      reacquire_stable_frames: 2
+      max_stale_ms: 80
+      reacquire_stable_ms: 40
 ```
 
 ## Validation responsibility
@@ -261,7 +265,7 @@ The tracker repo should validate at minimum:
 - `tracking.hands.landmark_mode` is a supported enum
 - `tracking.hands.inference_interval_frames >= 1`
 - `tracking.hands.bbox_recompute_interval_frames >= 1`
-- `tracking.hands.validity.max_stale_frames >= 0`
-- `tracking.hands.validity.reacquire_stable_frames >= 1`
+- `tracking.hands.validity.max_stale_ms >= 0`
+- `tracking.hands.validity.reacquire_stable_ms >= 0`
 
 The tracker repo should ignore no unknown gesture fields because gesture files must never be handed to it in the first place.

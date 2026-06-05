@@ -94,6 +94,7 @@ static func normalize(frame: Dictionary, config: Dictionary = {}, previous_frame
 		normalized.get("hand_tracking", {}),
 		flip_horizontal,
 		normalized.get("frame_index", 0),
+		int(normalized.get("timestamp_ms", 0)),
 		normalized.get("timestamp_seconds", 0.0),
 		previous_frame.get("hands", {}) if previous_frame.get("hands", {}) is Dictionary else {}
 	)
@@ -138,8 +139,8 @@ static func _normalize_hand_tracking_meta(frame: Dictionary, config: Dictionary)
 		"inference_interval_frames": int(vendor_meta.get("inference_interval_frames", hands_config.get("inference_interval_frames", CameraTrackingConfig.DEFAULT_HAND_INFERENCE_INTERVAL_FRAMES))),
 		"bbox_recompute_interval_frames": int(vendor_meta.get("bbox_recompute_interval_frames", hands_config.get("bbox_recompute_interval_frames", CameraTrackingConfig.DEFAULT_HAND_BBOX_RECOMPUTE_INTERVAL_FRAMES))),
 		"bbox_enabled": bool(vendor_meta.get("bbox_enabled", bbox.get("enabled", true))),
-		"max_stale_frames": int(vendor_meta.get("max_stale_frames", validity.get("max_stale_frames", CameraTrackingConfig.DEFAULT_HAND_VALIDITY_MAX_STALE_FRAMES))),
-		"reacquire_stable_frames": int(vendor_meta.get("reacquire_stable_frames", validity.get("reacquire_stable_frames", CameraTrackingConfig.DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_FRAMES))),
+		"max_stale_ms": int(vendor_meta.get("max_stale_ms", vendor_meta.get("max_stale_frames", validity.get("max_stale_ms", CameraTrackingConfig.DEFAULT_HAND_VALIDITY_MAX_STALE_MS)))),
+		"reacquire_stable_ms": int(vendor_meta.get("reacquire_stable_ms", vendor_meta.get("reacquire_stable_frames", validity.get("reacquire_stable_ms", CameraTrackingConfig.DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_MS)))),
 		"grace": {
 			"enabled": bool(grace.get("enabled", CameraTrackingConfig.DEFAULT_HAND_GRACE_ENABLED)),
 			"position_decay": clampf(float(grace.get("position_decay", CameraTrackingConfig.DEFAULT_HAND_GRACE_POSITION_DECAY)), 0.0, 1.0),
@@ -231,14 +232,20 @@ static func _empty_hand_payload(side: String, hand_tracking: Dictionary) -> Dict
 		"tracking_state": state,
 		"landmark_mode": str(hand_tracking.get("landmark_mode", CameraTrackingConfig.DEFAULT_HAND_LANDMARK_MODE)),
 		"frame_index": 0,
+		"timestamp_ms": 0,
 		"timestamp_seconds": 0.0,
 		"stale_frames": 0,
+		"stale_ms": 0,
 		"grace_frames": 0,
+		"grace_ms": 0,
+		"stable_ms": 0,
 		"predicted": false,
 		"association": _empty_association(side),
 		"landmarks": [],
 		"bbox": _empty_bbox(),
 		"_stable_valid_frames": 0,
+		"_stable_since_timestamp_ms": 0,
+		"_last_observed_timestamp_ms": 0,
 		"_bbox_position_delta": {"x": 0.0, "y": 0.0},
 		"_bbox_size_delta": {"width": 0.0, "height": 0.0}
 	}
@@ -269,12 +276,14 @@ static func _normalize_hands_by_side(
 	hand_tracking: Dictionary,
 	flip_horizontal: bool,
 	frame_index: int,
+	timestamp_ms: int,
 	timestamp_seconds: float,
 	previous_hands: Dictionary
 ) -> Dictionary:
 	var normalized := _empty_hands_payload(hand_tracking)
 	for side in _HAND_SIDES:
 		normalized[side]["frame_index"] = frame_index
+		normalized[side]["timestamp_ms"] = timestamp_ms
 		normalized[side]["timestamp_seconds"] = timestamp_seconds
 	if not bool(hand_tracking.get("enabled", false)):
 		return normalized
@@ -297,29 +306,37 @@ static func _normalize_hands_by_side(
 				hand_tracking,
 				previous_payload,
 				frame_index,
+				timestamp_ms,
 				timestamp_seconds
 			)
 			continue
 		var stale_frames: int = int(previous_payload.get("stale_frames", 0)) + 1
-		var max_stale_frames: int = max(0, int(hand_tracking.get("max_stale_frames", 0)))
+		var stale_ms: int = _hand_stale_ms(previous_payload, timestamp_ms)
+		var max_stale_ms: int = max(0, int(hand_tracking.get("max_stale_ms", 0)))
 		var grace: Dictionary = hand_tracking.get("grace", {}) if hand_tracking.get("grace", {}) is Dictionary else {}
-		if _has_prior_hand_sample(previous_payload) and stale_frames <= max_stale_frames:
+		if _has_prior_hand_sample(previous_payload) and stale_ms <= max_stale_ms:
 			if bool(grace.get("enabled", CameraTrackingConfig.DEFAULT_HAND_GRACE_ENABLED)):
-				normalized[side] = _predict_grace_hand_payload(side, previous_payload, hand_tracking, frame_index, timestamp_seconds, stale_frames)
+				normalized[side] = _predict_grace_hand_payload(side, previous_payload, hand_tracking, frame_index, timestamp_ms, timestamp_seconds, stale_frames, stale_ms)
 			else:
 				normalized[side] = {
 					"tracking_valid": true,
 					"tracking_state": "stale",
 					"landmark_mode": str(previous_payload.get("landmark_mode", hand_tracking.get("landmark_mode", CameraTrackingConfig.DEFAULT_HAND_LANDMARK_MODE))),
 					"frame_index": frame_index,
+					"timestamp_ms": timestamp_ms,
 					"timestamp_seconds": timestamp_seconds,
 					"stale_frames": stale_frames,
+					"stale_ms": stale_ms,
 					"grace_frames": 0,
+					"grace_ms": 0,
+					"stable_ms": int(previous_payload.get("stable_ms", 0)),
 					"predicted": false,
 					"association": previous_payload.get("association", _empty_association(side)).duplicate(true),
 					"landmarks": previous_payload.get("landmarks", []).duplicate(true),
 					"bbox": previous_payload.get("bbox", _empty_bbox()).duplicate(true),
 					"_stable_valid_frames": int(previous_payload.get("_stable_valid_frames", 0)),
+					"_stable_since_timestamp_ms": int(previous_payload.get("_stable_since_timestamp_ms", 0)),
+					"_last_observed_timestamp_ms": int(previous_payload.get("_last_observed_timestamp_ms", 0)),
 					"_pose_side_locked": bool(previous_payload.get("_pose_side_locked", false)),
 					"_bbox_position_delta": previous_payload.get("_bbox_position_delta", {"x": 0.0, "y": 0.0}).duplicate(true),
 					"_bbox_size_delta": previous_payload.get("_bbox_size_delta", {"width": 0.0, "height": 0.0}).duplicate(true)
@@ -327,8 +344,13 @@ static func _normalize_hands_by_side(
 		elif _has_prior_hand_sample(previous_payload):
 			normalized[side]["tracking_state"] = "tracking_lost"
 			normalized[side]["stale_frames"] = stale_frames
+			normalized[side]["stale_ms"] = stale_ms
 			normalized[side]["grace_frames"] = 0
+			normalized[side]["grace_ms"] = 0
+			normalized[side]["stable_ms"] = 0
 			normalized[side]["predicted"] = false
+			normalized[side]["_last_observed_timestamp_ms"] = int(previous_payload.get("_last_observed_timestamp_ms", 0))
+			normalized[side]["_stable_since_timestamp_ms"] = 0
 			normalized[side]["_pose_side_locked"] = bool(previous_payload.get("_pose_side_locked", false))
 	return normalized
 
@@ -546,13 +568,16 @@ static func _tracked_hand_payload_from_candidate(
 	hand_tracking: Dictionary,
 	previous_payload: Dictionary,
 	frame_index: int,
+	timestamp_ms: int,
 	timestamp_seconds: float
 ) -> Dictionary:
 	var stable_valid_frames: int = 1
 	if _has_prior_hand_sample(previous_payload):
 		stable_valid_frames = int(previous_payload.get("_stable_valid_frames", 0)) + 1
-	var reacquire_frames: int = max(1, int(hand_tracking.get("reacquire_stable_frames", 1)))
-	var tracking_valid: bool = stable_valid_frames >= reacquire_frames
+	var stable_since_timestamp_ms := _stable_since_timestamp_ms(previous_payload, timestamp_ms)
+	var stable_ms := max(0, timestamp_ms - stable_since_timestamp_ms)
+	var reacquire_stable_ms: int = max(0, int(hand_tracking.get("reacquire_stable_ms", 0)))
+	var tracking_valid: bool = stable_ms >= reacquire_stable_ms
 	var tracking_state: String = "tracked" if tracking_valid else "reacquiring"
 	var bbox: Dictionary = candidate.get("bbox", _empty_bbox()).duplicate(true)
 	return {
@@ -560,14 +585,20 @@ static func _tracked_hand_payload_from_candidate(
 		"tracking_state": tracking_state,
 		"landmark_mode": str(hand_tracking.get("landmark_mode", CameraTrackingConfig.DEFAULT_HAND_LANDMARK_MODE)),
 		"frame_index": frame_index,
+		"timestamp_ms": timestamp_ms,
 		"timestamp_seconds": timestamp_seconds,
 		"stale_frames": 0,
+		"stale_ms": 0,
 		"grace_frames": 0,
+		"grace_ms": 0,
+		"stable_ms": stable_ms,
 		"predicted": false,
 		"association": _association_from_candidate(side, candidate, assignment),
 		"landmarks": candidate.get("landmarks", []).duplicate(true),
 		"bbox": bbox,
 		"_stable_valid_frames": stable_valid_frames,
+		"_stable_since_timestamp_ms": stable_since_timestamp_ms,
+		"_last_observed_timestamp_ms": timestamp_ms,
 		"_pose_side_locked": bool(assignment.get("pose_side_locked", false)),
 		"_bbox_position_delta": _bbox_position_delta(previous_payload, bbox),
 		"_bbox_size_delta": _bbox_size_delta(previous_payload, bbox)
@@ -578,8 +609,10 @@ static func _predict_grace_hand_payload(
 	previous_payload: Dictionary,
 	hand_tracking: Dictionary,
 	frame_index: int,
+	timestamp_ms: int,
 	timestamp_seconds: float,
-	stale_frames: int
+	stale_frames: int,
+	stale_ms: int
 ) -> Dictionary:
 	var grace: Dictionary = hand_tracking.get("grace", {}) if hand_tracking.get("grace", {}) is Dictionary else {}
 	var previous_bbox: Dictionary = previous_payload.get("bbox", {}) if previous_payload.get("bbox", {}) is Dictionary else _empty_bbox()
@@ -591,18 +624,38 @@ static func _predict_grace_hand_payload(
 		"tracking_state": "grace",
 		"landmark_mode": str(previous_payload.get("landmark_mode", hand_tracking.get("landmark_mode", CameraTrackingConfig.DEFAULT_HAND_LANDMARK_MODE))),
 		"frame_index": frame_index,
+		"timestamp_ms": timestamp_ms,
 		"timestamp_seconds": timestamp_seconds,
 		"stale_frames": stale_frames,
+		"stale_ms": stale_ms,
 		"grace_frames": stale_frames,
+		"grace_ms": stale_ms,
+		"stable_ms": int(previous_payload.get("stable_ms", 0)),
 		"predicted": true,
 		"association": previous_payload.get("association", _empty_association(side)).duplicate(true),
 		"landmarks": _predict_landmarks(previous_payload.get("landmarks", []) if previous_payload.get("landmarks", []) is Array else [], previous_bbox, predicted_bbox),
 		"bbox": predicted_bbox,
 		"_stable_valid_frames": int(previous_payload.get("_stable_valid_frames", 0)),
+		"_stable_since_timestamp_ms": int(previous_payload.get("_stable_since_timestamp_ms", 0)),
+		"_last_observed_timestamp_ms": int(previous_payload.get("_last_observed_timestamp_ms", 0)),
 		"_pose_side_locked": bool(previous_payload.get("_pose_side_locked", false)),
 		"_bbox_position_delta": _decay_bbox_position_delta(position_delta, float(grace.get("position_decay", CameraTrackingConfig.DEFAULT_HAND_GRACE_POSITION_DECAY))),
 		"_bbox_size_delta": _decay_bbox_size_delta(size_delta, float(grace.get("size_decay", CameraTrackingConfig.DEFAULT_HAND_GRACE_SIZE_DECAY)))
 	}
+
+static func _hand_stale_ms(previous_payload: Dictionary, timestamp_ms: int) -> int:
+	var last_observed_timestamp_ms := int(previous_payload.get("_last_observed_timestamp_ms", previous_payload.get("timestamp_ms", 0)))
+	if last_observed_timestamp_ms <= 0:
+		last_observed_timestamp_ms = timestamp_ms
+	return max(0, timestamp_ms - last_observed_timestamp_ms)
+
+static func _stable_since_timestamp_ms(previous_payload: Dictionary, timestamp_ms: int) -> int:
+	var previous_state := str(previous_payload.get("tracking_state", "idle"))
+	if ["tracked", "reacquiring"].has(previous_state):
+		var stable_since := int(previous_payload.get("_stable_since_timestamp_ms", previous_payload.get("timestamp_ms", 0)))
+		if stable_since > 0:
+			return stable_since
+	return timestamp_ms
 
 static func _bbox_position_delta(previous_payload: Dictionary, bbox: Dictionary) -> Dictionary:
 	var previous_bbox: Dictionary = previous_payload.get("bbox", {}) if previous_payload.get("bbox", {}) is Dictionary else {}

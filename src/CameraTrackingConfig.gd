@@ -19,8 +19,8 @@ const DEFAULT_HAND_BBOX_RECOMPUTE_INTERVAL_FRAMES := 1
 const DEFAULT_HAND_BBOX_ENABLED := true
 const DEFAULT_HAND_ASSOCIATION_PREFER_EXISTING_POSE_SIDE_BINDING := true
 const DEFAULT_HAND_ASSOCIATION_NEAREST_WRIST_FALLBACK := true
-const DEFAULT_HAND_VALIDITY_MAX_STALE_FRAMES := 2
-const DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_FRAMES := 2
+const DEFAULT_HAND_VALIDITY_MAX_STALE_MS := 80
+const DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_MS := 40
 const DEFAULT_HAND_GRACE_ENABLED := true
 const DEFAULT_HAND_GRACE_POSITION_DECAY := 1.0
 const DEFAULT_HAND_GRACE_SIZE_DECAY := 1.0
@@ -56,8 +56,8 @@ static func defaults() -> Dictionary:
 					"nearest_wrist_fallback": DEFAULT_HAND_ASSOCIATION_NEAREST_WRIST_FALLBACK
 				},
 				"validity": {
-					"max_stale_frames": DEFAULT_HAND_VALIDITY_MAX_STALE_FRAMES,
-					"reacquire_stable_frames": DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_FRAMES
+					"max_stale_ms": DEFAULT_HAND_VALIDITY_MAX_STALE_MS,
+					"reacquire_stable_ms": DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_MS
 				},
 				"grace": {
 					"enabled": DEFAULT_HAND_GRACE_ENABLED,
@@ -191,14 +191,16 @@ static func _normalize_hand_validity_config(value: Variant) -> Dictionary:
 	var validity: Dictionary = defaults().get("tracking", {}).get("hands", {}).get("validity", {}).duplicate(true)
 	if value is Dictionary:
 		_deep_merge(validity, value)
-	validity["max_stale_frames"] = _normalize_nonnegative_int(
-		validity.get("max_stale_frames", DEFAULT_HAND_VALIDITY_MAX_STALE_FRAMES),
-		DEFAULT_HAND_VALIDITY_MAX_STALE_FRAMES
+	validity["max_stale_ms"] = _normalize_nonnegative_int(
+		validity.get("max_stale_ms", validity.get("max_stale_frames", DEFAULT_HAND_VALIDITY_MAX_STALE_MS)),
+		DEFAULT_HAND_VALIDITY_MAX_STALE_MS
 	)
-	validity["reacquire_stable_frames"] = _normalize_positive_int(
-		validity.get("reacquire_stable_frames", DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_FRAMES),
-		DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_FRAMES
+	validity["reacquire_stable_ms"] = _normalize_nonnegative_int(
+		validity.get("reacquire_stable_ms", validity.get("reacquire_stable_frames", DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_MS)),
+		DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_MS
 	)
+	validity.erase("max_stale_frames")
+	validity.erase("reacquire_stable_frames")
 	return validity
 
 static func _normalize_hand_grace_config(value: Variant) -> Dictionary:
@@ -252,13 +254,13 @@ static func _apply_runtime_compatibility(normalized: Dictionary) -> void:
 		)
 	if not runtime.has("hand_bbox_enabled"):
 		runtime["hand_bbox_enabled"] = bool(bbox.get("enabled", DEFAULT_HAND_BBOX_ENABLED))
-	if not runtime.has("hand_max_stale_frames"):
-		runtime["hand_max_stale_frames"] = int(
-			validity.get("max_stale_frames", DEFAULT_HAND_VALIDITY_MAX_STALE_FRAMES)
+	if not runtime.has("hand_max_stale_ms"):
+		runtime["hand_max_stale_ms"] = int(
+			validity.get("max_stale_ms", DEFAULT_HAND_VALIDITY_MAX_STALE_MS)
 		)
-	if not runtime.has("hand_reacquire_stable_frames"):
-		runtime["hand_reacquire_stable_frames"] = int(
-			validity.get("reacquire_stable_frames", DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_FRAMES)
+	if not runtime.has("hand_reacquire_stable_ms"):
+		runtime["hand_reacquire_stable_ms"] = int(
+			validity.get("reacquire_stable_ms", DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_MS)
 		)
 	if not runtime.has("hand_grace_enabled"):
 		runtime["hand_grace_enabled"] = bool(grace.get("enabled", DEFAULT_HAND_GRACE_ENABLED))

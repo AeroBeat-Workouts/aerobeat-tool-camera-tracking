@@ -442,8 +442,8 @@ func test_config_normalization_adds_tracker_pose_and_hand_defaults() -> void:
 					"prefer_existing_pose_side_binding": false
 				},
 				"validity": {
-					"max_stale_frames": 7,
-					"reacquire_stable_frames": 2
+					"max_stale_ms": 280,
+					"reacquire_stable_ms": 40
 				}
 			}
 		}
@@ -456,7 +456,8 @@ func test_config_normalization_adds_tracker_pose_and_hand_defaults() -> void:
 	assert_eq(config.get("tracking", {}).get("hands", {}).get("bbox_recompute_interval_frames"), 5)
 	assert_eq(config.get("tracking", {}).get("hands", {}).get("association", {}).get("prefer_existing_pose_side_binding"), false)
 	assert_eq(config.get("tracking", {}).get("hands", {}).get("association", {}).get("nearest_wrist_fallback"), true)
-	assert_eq(config.get("tracking", {}).get("hands", {}).get("validity", {}).get("max_stale_frames"), 7)
+	assert_eq(config.get("tracking", {}).get("hands", {}).get("validity", {}).get("max_stale_ms"), 280)
+	assert_eq(config.get("tracking", {}).get("hands", {}).get("validity", {}).get("reacquire_stable_ms"), 40)
 	assert_eq(config.get("runtime", {}).get("pose_inference_interval_frames"), 3)
 	assert_eq(config.get("runtime", {}).get("pose_smoothing_style"), "lite_raw")
 	assert_eq(config.get("runtime", {}).get("no_filter"), true)
@@ -476,8 +477,8 @@ func test_frame_normalization_builds_per_side_hand_payload_from_vendor_samples()
 				"inference_interval_frames": 2,
 				"bbox_recompute_interval_frames": 3,
 				"validity": {
-					"max_stale_frames": 2,
-					"reacquire_stable_frames": 2
+					"max_stale_ms": 80,
+					"reacquire_stable_ms": 40
 				}
 			}
 		}
@@ -508,8 +509,8 @@ func test_frame_normalization_builds_per_side_hand_payload_from_vendor_samples()
 			"inference_backend": "mediapipe_tasks_hand_landmarker",
 			"inference_interval_frames": 2,
 			"bbox_recompute_interval_frames": 3,
-			"max_stale_frames": 2,
-			"reacquire_stable_frames": 2
+			"max_stale_ms": 80,
+			"reacquire_stable_ms": 40
 		}
 	}, config)
 	var left_hand: Dictionary = frame.get("hands", {}).get("left", {})
@@ -528,6 +529,63 @@ func test_frame_normalization_builds_per_side_hand_payload_from_vendor_samples()
 	assert_false(right_hand.get("tracking_valid"))
 	assert_eq(right_hand.get("association", {}).get("source_label"), "left")
 
+func test_frame_normalization_reacquire_uses_elapsed_milliseconds() -> void:
+	var config := {
+		"backend": "mediapipe_python",
+		"source": {"kind": "live_camera", "camera_id": "/dev/video0"},
+		"preview": {"flip_horizontal": false},
+		"tracking": {
+			"hands": {
+				"enabled": true,
+				"validity": {
+					"max_stale_ms": 80,
+					"reacquire_stable_ms": 40
+				}
+			}
+		}
+	}
+	var first := CameraTrackingFrame.normalize({
+		"timestamp_ms": 100,
+		"landmarks": [{"id": 15, "x": 0.20, "y": 0.5, "z": 0.0, "visibility": 0.9}],
+		"hands": [{
+			"label": "Left",
+			"score": 0.95,
+			"landmarks": [{"id": 0, "x": 0.21, "y": 0.5, "z": 0.0}],
+			"bbox": {"x": 0.18, "y": 0.42, "width": 0.08, "height": 0.16}
+		}],
+		"vendor_hand_tracking": {"available": true}
+	}, config)
+	var second := CameraTrackingFrame.normalize({
+		"timestamp_ms": 130,
+		"landmarks": [{"id": 15, "x": 0.21, "y": 0.5, "z": 0.0, "visibility": 0.9}],
+		"hands": [{
+			"label": "Left",
+			"score": 0.96,
+			"landmarks": [{"id": 0, "x": 0.22, "y": 0.5, "z": 0.0}],
+			"bbox": {"x": 0.19, "y": 0.42, "width": 0.08, "height": 0.16}
+		}],
+		"vendor_hand_tracking": {"available": true}
+	}, config, first)
+	var third := CameraTrackingFrame.normalize({
+		"timestamp_ms": 140,
+		"landmarks": [{"id": 15, "x": 0.22, "y": 0.5, "z": 0.0, "visibility": 0.9}],
+		"hands": [{
+			"label": "Left",
+			"score": 0.97,
+			"landmarks": [{"id": 0, "x": 0.23, "y": 0.5, "z": 0.0}],
+			"bbox": {"x": 0.20, "y": 0.42, "width": 0.08, "height": 0.16}
+		}],
+		"vendor_hand_tracking": {"available": true}
+	}, config, second)
+	assert_eq(first.get("hands", {}).get("left", {}).get("tracking_state"), "reacquiring")
+	assert_eq(int(first.get("hands", {}).get("left", {}).get("stable_ms", -1)), 0)
+	assert_eq(second.get("hands", {}).get("left", {}).get("tracking_state"), "reacquiring")
+	assert_eq(int(second.get("hands", {}).get("left", {}).get("stable_ms", -1)), 30)
+	assert_false(bool(second.get("hands", {}).get("left", {}).get("tracking_valid", true)))
+	assert_eq(third.get("hands", {}).get("left", {}).get("tracking_state"), "tracked")
+	assert_eq(int(third.get("hands", {}).get("left", {}).get("stable_ms", -1)), 40)
+	assert_true(bool(third.get("hands", {}).get("left", {}).get("tracking_valid", false)))
+
 func test_frame_normalization_carries_stale_hands_until_validity_budget_expires() -> void:
 	var config := {
 		"backend": "mediapipe_python",
@@ -537,8 +595,8 @@ func test_frame_normalization_carries_stale_hands_until_validity_budget_expires(
 			"hands": {
 				"enabled": true,
 				"validity": {
-					"max_stale_frames": 2,
-					"reacquire_stable_frames": 1
+					"max_stale_ms": 80,
+					"reacquire_stable_ms": 0
 				}
 			}
 		}
@@ -563,7 +621,7 @@ func test_frame_normalization_carries_stale_hands_until_validity_budget_expires(
 		}
 	}, config)
 	var second := CameraTrackingFrame.normalize({
-		"timestamp_ms": 200,
+		"timestamp_ms": 140,
 		"landmarks": [
 			{"id": 15, "x": 0.20, "y": 0.5, "z": 0.0, "visibility": 0.9}
 		],
@@ -575,7 +633,7 @@ func test_frame_normalization_carries_stale_hands_until_validity_budget_expires(
 		}
 	}, config, first)
 	var third := CameraTrackingFrame.normalize({
-		"timestamp_ms": 300,
+		"timestamp_ms": 180,
 		"landmarks": [
 			{"id": 15, "x": 0.20, "y": 0.5, "z": 0.0, "visibility": 0.9}
 		],
@@ -587,7 +645,7 @@ func test_frame_normalization_carries_stale_hands_until_validity_budget_expires(
 		}
 	}, config, second)
 	var fourth := CameraTrackingFrame.normalize({
-		"timestamp_ms": 400,
+		"timestamp_ms": 220,
 		"landmarks": [
 			{"id": 15, "x": 0.20, "y": 0.5, "z": 0.0, "visibility": 0.9}
 		],
@@ -605,12 +663,17 @@ func test_frame_normalization_carries_stale_hands_until_validity_budget_expires(
 	assert_true(bool(second.get("hands", {}).get("left", {}).get("predicted", false)))
 	assert_eq(second.get("hands", {}).get("left", {}).get("grace_frames"), 1)
 	assert_eq(second.get("hands", {}).get("left", {}).get("stale_frames"), 1)
+	assert_eq(second.get("hands", {}).get("left", {}).get("stale_ms"), 40)
+	assert_eq(second.get("hands", {}).get("left", {}).get("grace_ms"), 40)
 	assert_eq(third.get("hands", {}).get("left", {}).get("tracking_state"), "grace")
 	assert_eq(third.get("hands", {}).get("left", {}).get("grace_frames"), 2)
 	assert_eq(third.get("hands", {}).get("left", {}).get("stale_frames"), 2)
+	assert_eq(third.get("hands", {}).get("left", {}).get("stale_ms"), 80)
+	assert_eq(third.get("hands", {}).get("left", {}).get("grace_ms"), 80)
 	assert_eq(fourth.get("hands", {}).get("left", {}).get("tracking_state"), "tracking_lost")
 	assert_false(fourth.get("hands", {}).get("left", {}).get("tracking_valid"))
 	assert_eq(fourth.get("hands", {}).get("left", {}).get("stale_frames"), 3)
+	assert_eq(fourth.get("hands", {}).get("left", {}).get("stale_ms"), 120)
 
 func test_frame_normalization_predicts_grace_bbox_from_recent_trend() -> void:
 	var config := {
@@ -621,8 +684,8 @@ func test_frame_normalization_predicts_grace_bbox_from_recent_trend() -> void:
 			"hands": {
 				"enabled": true,
 				"validity": {
-					"max_stale_frames": 2,
-					"reacquire_stable_frames": 1
+					"max_stale_ms": 80,
+					"reacquire_stable_ms": 0
 				},
 				"grace": {
 					"enabled": true,
@@ -646,7 +709,7 @@ func test_frame_normalization_predicts_grace_bbox_from_recent_trend() -> void:
 		"vendor_hand_tracking": {"available": true}
 	}, config)
 	var tracked := CameraTrackingFrame.normalize({
-		"timestamp_ms": 200,
+		"timestamp_ms": 140,
 		"landmarks": [
 			{"id": 15, "x": 0.25, "y": 0.48, "z": 0.0, "visibility": 0.9}
 		],
@@ -659,7 +722,7 @@ func test_frame_normalization_predicts_grace_bbox_from_recent_trend() -> void:
 		"vendor_hand_tracking": {"available": true}
 	}, config, first)
 	var grace := CameraTrackingFrame.normalize({
-		"timestamp_ms": 300,
+		"timestamp_ms": 180,
 		"landmarks": [
 			{"id": 15, "x": 0.30, "y": 0.46, "z": 0.0, "visibility": 0.9}
 		],
@@ -684,8 +747,8 @@ func test_frame_normalization_preserves_pose_side_lock_across_tracking_lost_reac
 			"hands": {
 				"enabled": true,
 				"validity": {
-					"max_stale_frames": 1,
-					"reacquire_stable_frames": 1
+					"max_stale_ms": 40,
+					"reacquire_stable_ms": 0
 				}
 			}
 		}
@@ -717,7 +780,7 @@ func test_frame_normalization_preserves_pose_side_lock_across_tracking_lost_reac
 		}
 	}, config)
 	var stale := CameraTrackingFrame.normalize({
-		"timestamp_ms": 200,
+		"timestamp_ms": 140,
 		"landmarks": [
 			{"id": 15, "x": 0.20, "y": 0.50, "z": 0.0, "visibility": 0.9},
 			{"id": 16, "x": 0.80, "y": 0.50, "z": 0.0, "visibility": 0.9}
@@ -730,7 +793,7 @@ func test_frame_normalization_preserves_pose_side_lock_across_tracking_lost_reac
 		}
 	}, config, first)
 	var lost := CameraTrackingFrame.normalize({
-		"timestamp_ms": 300,
+		"timestamp_ms": 190,
 		"landmarks": [
 			{"id": 15, "x": 0.20, "y": 0.50, "z": 0.0, "visibility": 0.9},
 			{"id": 16, "x": 0.80, "y": 0.50, "z": 0.0, "visibility": 0.9}
@@ -743,7 +806,7 @@ func test_frame_normalization_preserves_pose_side_lock_across_tracking_lost_reac
 		}
 	}, config, stale)
 	var reacquired := CameraTrackingFrame.normalize({
-		"timestamp_ms": 400,
+		"timestamp_ms": 240,
 		"landmarks": [
 			{"id": 15, "x": 0.78, "y": 0.50, "z": 0.0, "visibility": 0.9},
 			{"id": 16, "x": 0.22, "y": 0.50, "z": 0.0, "visibility": 0.9}
@@ -787,8 +850,8 @@ func test_frame_normalization_single_reacquired_candidate_chooses_nearest_locked
 			"hands": {
 				"enabled": true,
 				"validity": {
-					"max_stale_frames": 1,
-					"reacquire_stable_frames": 1
+					"max_stale_ms": 40,
+					"reacquire_stable_ms": 0
 				}
 			}
 		}
@@ -820,7 +883,7 @@ func test_frame_normalization_single_reacquired_candidate_chooses_nearest_locked
 		}
 	}, config)
 	var stale := CameraTrackingFrame.normalize({
-		"timestamp_ms": 200,
+		"timestamp_ms": 140,
 		"landmarks": [
 			{"id": 15, "x": 0.20, "y": 0.50, "z": 0.0, "visibility": 0.9},
 			{"id": 16, "x": 0.80, "y": 0.50, "z": 0.0, "visibility": 0.9}
@@ -833,7 +896,7 @@ func test_frame_normalization_single_reacquired_candidate_chooses_nearest_locked
 		}
 	}, config, tracked)
 	var lost := CameraTrackingFrame.normalize({
-		"timestamp_ms": 300,
+		"timestamp_ms": 190,
 		"landmarks": [
 			{"id": 15, "x": 0.20, "y": 0.50, "z": 0.0, "visibility": 0.9},
 			{"id": 16, "x": 0.80, "y": 0.50, "z": 0.0, "visibility": 0.9}
