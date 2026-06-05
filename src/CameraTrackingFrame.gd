@@ -117,6 +117,7 @@ static func _normalize_hand_tracking_meta(frame: Dictionary, config: Dictionary)
 	var validity: Dictionary = hands_config.get("validity", {}) if hands_config.get("validity", {}) is Dictionary else {}
 	var association: Dictionary = hands_config.get("association", {}) if hands_config.get("association", {}) is Dictionary else {}
 	var bbox: Dictionary = hands_config.get("bbox", {}) if hands_config.get("bbox", {}) is Dictionary else {}
+	var grace: Dictionary = hands_config.get("grace", {}) if hands_config.get("grace", {}) is Dictionary else {}
 	var vendor_meta: Dictionary = frame.get("vendor_hand_tracking", {}) if frame.get("vendor_hand_tracking", {}) is Dictionary else {}
 	var hands_enabled := bool(hands_config.get("enabled", false))
 	var raw_hands := frame.get("hands", []) if frame.get("hands", []) is Array else []
@@ -139,6 +140,11 @@ static func _normalize_hand_tracking_meta(frame: Dictionary, config: Dictionary)
 		"bbox_enabled": bool(vendor_meta.get("bbox_enabled", bbox.get("enabled", true))),
 		"max_stale_frames": int(vendor_meta.get("max_stale_frames", validity.get("max_stale_frames", CameraTrackingConfig.DEFAULT_HAND_VALIDITY_MAX_STALE_FRAMES))),
 		"reacquire_stable_frames": int(vendor_meta.get("reacquire_stable_frames", validity.get("reacquire_stable_frames", CameraTrackingConfig.DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_FRAMES))),
+		"grace": {
+			"enabled": bool(grace.get("enabled", CameraTrackingConfig.DEFAULT_HAND_GRACE_ENABLED)),
+			"position_decay": clampf(float(grace.get("position_decay", CameraTrackingConfig.DEFAULT_HAND_GRACE_POSITION_DECAY)), 0.0, 1.0),
+			"size_decay": clampf(float(grace.get("size_decay", CameraTrackingConfig.DEFAULT_HAND_GRACE_SIZE_DECAY)), 0.0, 1.0)
+		},
 		"association": {
 			"prefer_existing_pose_side_binding": bool(association.get("prefer_existing_pose_side_binding", true)),
 			"nearest_wrist_fallback": bool(association.get("nearest_wrist_fallback", true))
@@ -208,7 +214,7 @@ static func _normalize_tracking_state(_state: Variant, landmarks: Array, hands: 
 	for side in _HAND_SIDES:
 		var payload: Dictionary = hands.get(side, {}) if hands.get(side, {}) is Dictionary else {}
 		var hand_state := str(payload.get("tracking_state", "idle"))
-		if ["tracked", "stale", "reacquiring"].has(hand_state):
+		if ["tracked", "grace", "stale", "reacquiring"].has(hand_state):
 			return "tracked"
 	return "idle"
 
@@ -227,10 +233,14 @@ static func _empty_hand_payload(side: String, hand_tracking: Dictionary) -> Dict
 		"frame_index": 0,
 		"timestamp_seconds": 0.0,
 		"stale_frames": 0,
+		"grace_frames": 0,
+		"predicted": false,
 		"association": _empty_association(side),
 		"landmarks": [],
 		"bbox": _empty_bbox(),
-		"_stable_valid_frames": 0
+		"_stable_valid_frames": 0,
+		"_bbox_position_delta": {"x": 0.0, "y": 0.0},
+		"_bbox_size_delta": {"width": 0.0, "height": 0.0}
 	}
 
 static func _empty_association(side: String) -> Dictionary:
@@ -280,45 +290,45 @@ static func _normalize_hands_by_side(
 		var previous_payload: Dictionary = previous_hands.get(side, {}) if previous_hands.get(side, {}) is Dictionary else {}
 		if assignment.has("candidate"):
 			var candidate: Dictionary = assignment.get("candidate", {})
-			var stable_valid_frames: int = 1
-			if _has_prior_hand_sample(previous_payload):
-				stable_valid_frames = int(previous_payload.get("_stable_valid_frames", 0)) + 1
-			var reacquire_frames: int = max(1, int(hand_tracking.get("reacquire_stable_frames", 1)))
-			var tracking_valid: bool = stable_valid_frames >= reacquire_frames
-			var tracking_state: String = "tracked" if tracking_valid else "reacquiring"
-			normalized[side] = {
-				"tracking_valid": tracking_valid,
-				"tracking_state": tracking_state,
-				"landmark_mode": str(hand_tracking.get("landmark_mode", CameraTrackingConfig.DEFAULT_HAND_LANDMARK_MODE)),
-				"frame_index": frame_index,
-				"timestamp_seconds": timestamp_seconds,
-				"stale_frames": 0,
-				"association": _association_from_candidate(side, candidate, assignment),
-				"landmarks": candidate.get("landmarks", []).duplicate(true),
-				"bbox": candidate.get("bbox", _empty_bbox()).duplicate(true),
-				"_stable_valid_frames": stable_valid_frames,
-				"_pose_side_locked": bool(assignment.get("pose_side_locked", false))
-			}
+			normalized[side] = _tracked_hand_payload_from_candidate(
+				side,
+				candidate,
+				assignment,
+				hand_tracking,
+				previous_payload,
+				frame_index,
+				timestamp_seconds
+			)
 			continue
 		var stale_frames: int = int(previous_payload.get("stale_frames", 0)) + 1
 		var max_stale_frames: int = max(0, int(hand_tracking.get("max_stale_frames", 0)))
+		var grace: Dictionary = hand_tracking.get("grace", {}) if hand_tracking.get("grace", {}) is Dictionary else {}
 		if _has_prior_hand_sample(previous_payload) and stale_frames <= max_stale_frames:
-			normalized[side] = {
-				"tracking_valid": true,
-				"tracking_state": "stale",
-				"landmark_mode": str(previous_payload.get("landmark_mode", hand_tracking.get("landmark_mode", CameraTrackingConfig.DEFAULT_HAND_LANDMARK_MODE))),
-				"frame_index": frame_index,
-				"timestamp_seconds": timestamp_seconds,
-				"stale_frames": stale_frames,
-				"association": previous_payload.get("association", _empty_association(side)).duplicate(true),
-				"landmarks": previous_payload.get("landmarks", []).duplicate(true),
-				"bbox": previous_payload.get("bbox", _empty_bbox()).duplicate(true),
-				"_stable_valid_frames": int(previous_payload.get("_stable_valid_frames", 0)),
-				"_pose_side_locked": bool(previous_payload.get("_pose_side_locked", false))
-			}
+			if bool(grace.get("enabled", CameraTrackingConfig.DEFAULT_HAND_GRACE_ENABLED)):
+				normalized[side] = _predict_grace_hand_payload(side, previous_payload, hand_tracking, frame_index, timestamp_seconds, stale_frames)
+			else:
+				normalized[side] = {
+					"tracking_valid": true,
+					"tracking_state": "stale",
+					"landmark_mode": str(previous_payload.get("landmark_mode", hand_tracking.get("landmark_mode", CameraTrackingConfig.DEFAULT_HAND_LANDMARK_MODE))),
+					"frame_index": frame_index,
+					"timestamp_seconds": timestamp_seconds,
+					"stale_frames": stale_frames,
+					"grace_frames": 0,
+					"predicted": false,
+					"association": previous_payload.get("association", _empty_association(side)).duplicate(true),
+					"landmarks": previous_payload.get("landmarks", []).duplicate(true),
+					"bbox": previous_payload.get("bbox", _empty_bbox()).duplicate(true),
+					"_stable_valid_frames": int(previous_payload.get("_stable_valid_frames", 0)),
+					"_pose_side_locked": bool(previous_payload.get("_pose_side_locked", false)),
+					"_bbox_position_delta": previous_payload.get("_bbox_position_delta", {"x": 0.0, "y": 0.0}).duplicate(true),
+					"_bbox_size_delta": previous_payload.get("_bbox_size_delta", {"width": 0.0, "height": 0.0}).duplicate(true)
+				}
 		elif _has_prior_hand_sample(previous_payload):
 			normalized[side]["tracking_state"] = "tracking_lost"
 			normalized[side]["stale_frames"] = stale_frames
+			normalized[side]["grace_frames"] = 0
+			normalized[side]["predicted"] = false
 			normalized[side]["_pose_side_locked"] = bool(previous_payload.get("_pose_side_locked", false))
 	return normalized
 
@@ -527,3 +537,128 @@ static func _has_prior_hand_sample(payload: Dictionary) -> bool:
 		return true
 	var bbox := payload.get("bbox", {}) if payload.get("bbox", {}) is Dictionary else {}
 	return float(bbox.get("area", 0.0)) > 0.0
+
+
+static func _tracked_hand_payload_from_candidate(
+	side: String,
+	candidate: Dictionary,
+	assignment: Dictionary,
+	hand_tracking: Dictionary,
+	previous_payload: Dictionary,
+	frame_index: int,
+	timestamp_seconds: float
+) -> Dictionary:
+	var stable_valid_frames: int = 1
+	if _has_prior_hand_sample(previous_payload):
+		stable_valid_frames = int(previous_payload.get("_stable_valid_frames", 0)) + 1
+	var reacquire_frames: int = max(1, int(hand_tracking.get("reacquire_stable_frames", 1)))
+	var tracking_valid: bool = stable_valid_frames >= reacquire_frames
+	var tracking_state: String = "tracked" if tracking_valid else "reacquiring"
+	var bbox: Dictionary = candidate.get("bbox", _empty_bbox()).duplicate(true)
+	return {
+		"tracking_valid": tracking_valid,
+		"tracking_state": tracking_state,
+		"landmark_mode": str(hand_tracking.get("landmark_mode", CameraTrackingConfig.DEFAULT_HAND_LANDMARK_MODE)),
+		"frame_index": frame_index,
+		"timestamp_seconds": timestamp_seconds,
+		"stale_frames": 0,
+		"grace_frames": 0,
+		"predicted": false,
+		"association": _association_from_candidate(side, candidate, assignment),
+		"landmarks": candidate.get("landmarks", []).duplicate(true),
+		"bbox": bbox,
+		"_stable_valid_frames": stable_valid_frames,
+		"_pose_side_locked": bool(assignment.get("pose_side_locked", false)),
+		"_bbox_position_delta": _bbox_position_delta(previous_payload, bbox),
+		"_bbox_size_delta": _bbox_size_delta(previous_payload, bbox)
+	}
+
+static func _predict_grace_hand_payload(
+	side: String,
+	previous_payload: Dictionary,
+	hand_tracking: Dictionary,
+	frame_index: int,
+	timestamp_seconds: float,
+	stale_frames: int
+) -> Dictionary:
+	var grace: Dictionary = hand_tracking.get("grace", {}) if hand_tracking.get("grace", {}) is Dictionary else {}
+	var previous_bbox: Dictionary = previous_payload.get("bbox", {}) if previous_payload.get("bbox", {}) is Dictionary else _empty_bbox()
+	var position_delta := previous_payload.get("_bbox_position_delta", {"x": 0.0, "y": 0.0}) if previous_payload.get("_bbox_position_delta", {"x": 0.0, "y": 0.0}) is Dictionary else {"x": 0.0, "y": 0.0}
+	var size_delta := previous_payload.get("_bbox_size_delta", {"width": 0.0, "height": 0.0}) if previous_payload.get("_bbox_size_delta", {"width": 0.0, "height": 0.0}) is Dictionary else {"width": 0.0, "height": 0.0}
+	var predicted_bbox := _predict_bbox(previous_bbox, position_delta, size_delta)
+	return {
+		"tracking_valid": true,
+		"tracking_state": "grace",
+		"landmark_mode": str(previous_payload.get("landmark_mode", hand_tracking.get("landmark_mode", CameraTrackingConfig.DEFAULT_HAND_LANDMARK_MODE))),
+		"frame_index": frame_index,
+		"timestamp_seconds": timestamp_seconds,
+		"stale_frames": stale_frames,
+		"grace_frames": stale_frames,
+		"predicted": true,
+		"association": previous_payload.get("association", _empty_association(side)).duplicate(true),
+		"landmarks": _predict_landmarks(previous_payload.get("landmarks", []) if previous_payload.get("landmarks", []) is Array else [], previous_bbox, predicted_bbox),
+		"bbox": predicted_bbox,
+		"_stable_valid_frames": int(previous_payload.get("_stable_valid_frames", 0)),
+		"_pose_side_locked": bool(previous_payload.get("_pose_side_locked", false)),
+		"_bbox_position_delta": _decay_bbox_position_delta(position_delta, float(grace.get("position_decay", CameraTrackingConfig.DEFAULT_HAND_GRACE_POSITION_DECAY))),
+		"_bbox_size_delta": _decay_bbox_size_delta(size_delta, float(grace.get("size_decay", CameraTrackingConfig.DEFAULT_HAND_GRACE_SIZE_DECAY)))
+	}
+
+static func _bbox_position_delta(previous_payload: Dictionary, bbox: Dictionary) -> Dictionary:
+	var previous_bbox: Dictionary = previous_payload.get("bbox", {}) if previous_payload.get("bbox", {}) is Dictionary else {}
+	if float(previous_bbox.get("area", 0.0)) <= 0.0:
+		return {"x": 0.0, "y": 0.0}
+	return {
+		"x": float(bbox.get("x", 0.0)) - float(previous_bbox.get("x", 0.0)),
+		"y": float(bbox.get("y", 0.0)) - float(previous_bbox.get("y", 0.0))
+	}
+
+static func _bbox_size_delta(previous_payload: Dictionary, bbox: Dictionary) -> Dictionary:
+	var previous_bbox: Dictionary = previous_payload.get("bbox", {}) if previous_payload.get("bbox", {}) is Dictionary else {}
+	if float(previous_bbox.get("area", 0.0)) <= 0.0:
+		return {"width": 0.0, "height": 0.0}
+	return {
+		"width": float(bbox.get("width", 0.0)) - float(previous_bbox.get("width", 0.0)),
+		"height": float(bbox.get("height", 0.0)) - float(previous_bbox.get("height", 0.0))
+	}
+
+static func _predict_bbox(previous_bbox: Dictionary, position_delta: Dictionary, size_delta: Dictionary) -> Dictionary:
+	return _normalize_bbox({
+		"x": float(previous_bbox.get("x", 0.0)) + float(position_delta.get("x", 0.0)),
+		"y": float(previous_bbox.get("y", 0.0)) + float(position_delta.get("y", 0.0)),
+		"width": maxf(0.0, float(previous_bbox.get("width", 0.0)) + float(size_delta.get("width", 0.0))),
+		"height": maxf(0.0, float(previous_bbox.get("height", 0.0)) + float(size_delta.get("height", 0.0)))
+	}, false)
+
+static func _predict_landmarks(landmarks: Array, previous_bbox: Dictionary, predicted_bbox: Dictionary) -> Array:
+	if landmarks.is_empty():
+		return []
+	if float(previous_bbox.get("area", 0.0)) <= 0.0 or float(predicted_bbox.get("area", 0.0)) <= 0.0:
+		return landmarks.duplicate(true)
+	var previous_center_x := float(previous_bbox.get("x", 0.0)) + (float(previous_bbox.get("width", 0.0)) * 0.5)
+	var previous_center_y := float(previous_bbox.get("y", 0.0)) + (float(previous_bbox.get("height", 0.0)) * 0.5)
+	var predicted_center_x := float(predicted_bbox.get("x", 0.0)) + (float(predicted_bbox.get("width", 0.0)) * 0.5)
+	var predicted_center_y := float(predicted_bbox.get("y", 0.0)) + (float(predicted_bbox.get("height", 0.0)) * 0.5)
+	var scale_x := float(predicted_bbox.get("width", 0.0)) / maxf(float(previous_bbox.get("width", 0.0)), 0.000001)
+	var scale_y := float(predicted_bbox.get("height", 0.0)) / maxf(float(previous_bbox.get("height", 0.0)), 0.000001)
+	var predicted: Array = []
+	for landmark_variant in landmarks:
+		if not landmark_variant is Dictionary:
+			continue
+		var landmark: Dictionary = (landmark_variant as Dictionary).duplicate(true)
+		landmark["x"] = _normalize_unit_coordinate(predicted_center_x + ((float(landmark.get("x", 0.0)) - previous_center_x) * scale_x))
+		landmark["y"] = _normalize_unit_coordinate(predicted_center_y + ((float(landmark.get("y", 0.0)) - previous_center_y) * scale_y))
+		predicted.append(landmark)
+	return predicted
+
+static func _decay_bbox_position_delta(position_delta: Dictionary, decay: float) -> Dictionary:
+	return {
+		"x": float(position_delta.get("x", 0.0)) * clampf(decay, 0.0, 1.0),
+		"y": float(position_delta.get("y", 0.0)) * clampf(decay, 0.0, 1.0)
+	}
+
+static func _decay_bbox_size_delta(size_delta: Dictionary, decay: float) -> Dictionary:
+	return {
+		"width": float(size_delta.get("width", 0.0)) * clampf(decay, 0.0, 1.0),
+		"height": float(size_delta.get("height", 0.0)) * clampf(decay, 0.0, 1.0)
+	}

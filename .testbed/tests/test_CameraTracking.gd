@@ -600,14 +600,80 @@ func test_frame_normalization_carries_stale_hands_until_validity_budget_expires(
 	}, config, third)
 	assert_eq(first.get("hands", {}).get("left", {}).get("tracking_state"), "tracked")
 	assert_true(first.get("hands", {}).get("left", {}).get("tracking_valid"))
-	assert_eq(second.get("hands", {}).get("left", {}).get("tracking_state"), "stale")
+	assert_eq(second.get("hands", {}).get("left", {}).get("tracking_state"), "grace")
 	assert_true(second.get("hands", {}).get("left", {}).get("tracking_valid"))
+	assert_true(bool(second.get("hands", {}).get("left", {}).get("predicted", false)))
+	assert_eq(second.get("hands", {}).get("left", {}).get("grace_frames"), 1)
 	assert_eq(second.get("hands", {}).get("left", {}).get("stale_frames"), 1)
-	assert_eq(third.get("hands", {}).get("left", {}).get("tracking_state"), "stale")
+	assert_eq(third.get("hands", {}).get("left", {}).get("tracking_state"), "grace")
+	assert_eq(third.get("hands", {}).get("left", {}).get("grace_frames"), 2)
 	assert_eq(third.get("hands", {}).get("left", {}).get("stale_frames"), 2)
 	assert_eq(fourth.get("hands", {}).get("left", {}).get("tracking_state"), "tracking_lost")
 	assert_false(fourth.get("hands", {}).get("left", {}).get("tracking_valid"))
 	assert_eq(fourth.get("hands", {}).get("left", {}).get("stale_frames"), 3)
+
+func test_frame_normalization_predicts_grace_bbox_from_recent_trend() -> void:
+	var config := {
+		"backend": "mediapipe_python",
+		"source": {"kind": "live_camera", "camera_id": "/dev/video0"},
+		"preview": {"flip_horizontal": false},
+		"tracking": {
+			"hands": {
+				"enabled": true,
+				"validity": {
+					"max_stale_frames": 2,
+					"reacquire_stable_frames": 1
+				},
+				"grace": {
+					"enabled": true,
+					"position_decay": 1.0,
+					"size_decay": 1.0
+				}
+			}
+		}
+	}
+	var first := CameraTrackingFrame.normalize({
+		"timestamp_ms": 100,
+		"landmarks": [
+			{"id": 15, "x": 0.20, "y": 0.50, "z": 0.0, "visibility": 0.9}
+		],
+		"hands": [{
+			"label": "Left",
+			"score": 0.95,
+			"landmarks": [{"id": 0, "x": 0.18, "y": 0.50, "z": 0.0}],
+			"bbox": {"x": 0.14, "y": 0.42, "width": 0.08, "height": 0.12}
+		}],
+		"vendor_hand_tracking": {"available": true}
+	}, config)
+	var tracked := CameraTrackingFrame.normalize({
+		"timestamp_ms": 200,
+		"landmarks": [
+			{"id": 15, "x": 0.25, "y": 0.48, "z": 0.0, "visibility": 0.9}
+		],
+		"hands": [{
+			"label": "Left",
+			"score": 0.96,
+			"landmarks": [{"id": 0, "x": 0.24, "y": 0.48, "z": 0.0}],
+			"bbox": {"x": 0.18, "y": 0.40, "width": 0.10, "height": 0.14}
+		}],
+		"vendor_hand_tracking": {"available": true}
+	}, config, first)
+	var grace := CameraTrackingFrame.normalize({
+		"timestamp_ms": 300,
+		"landmarks": [
+			{"id": 15, "x": 0.30, "y": 0.46, "z": 0.0, "visibility": 0.9}
+		],
+		"hands": [],
+		"vendor_hand_tracking": {"available": true}
+	}, config, tracked)
+	var bbox: Dictionary = grace.get("hands", {}).get("left", {}).get("bbox", {})
+	assert_eq(grace.get("hands", {}).get("left", {}).get("tracking_state"), "grace")
+	assert_true(bool(grace.get("hands", {}).get("left", {}).get("predicted", false)))
+	assert_true(is_equal_approx(float(bbox.get("x", 0.0)), 0.22))
+	assert_true(is_equal_approx(float(bbox.get("y", 0.0)), 0.38))
+	assert_true(is_equal_approx(float(bbox.get("width", 0.0)), 0.12))
+	assert_true(is_equal_approx(float(bbox.get("height", 0.0)), 0.16))
+	assert_true(is_equal_approx(float(bbox.get("area", 0.0)), 0.0192))
 
 func test_frame_normalization_preserves_pose_side_lock_across_tracking_lost_reacquire() -> void:
 	var config := {
@@ -702,7 +768,7 @@ func test_frame_normalization_preserves_pose_side_lock_across_tracking_lost_reac
 			"inference_backend": "mediapipe_tasks_hand_landmarker"
 		}
 	}, config, lost)
-	assert_eq(stale.get("hands", {}).get("left", {}).get("tracking_state"), "stale")
+	assert_eq(stale.get("hands", {}).get("left", {}).get("tracking_state"), "grace")
 	assert_eq(lost.get("hands", {}).get("left", {}).get("tracking_state"), "tracking_lost")
 	assert_true(bool(lost.get("hands", {}).get("left", {}).get("_pose_side_locked", false)))
 	assert_eq(reacquired.get("hands", {}).get("left", {}).get("association", {}).get("method"), "prefer_existing_pose_side_binding")
@@ -1033,6 +1099,8 @@ func test_preview_presenter_exposes_hand_debug_snapshot_and_bbox_preview_rects()
 	assert_false(snapshot.get("hands", {}).get("left", {}).get("tracking_valid"))
 	assert_eq(snapshot.get("hands", {}).get("left", {}).get("tracking_state"), "reacquiring")
 	assert_eq(snapshot.get("hands", {}).get("left", {}).get("landmark_mode"), "full")
+	assert_eq(int(snapshot.get("hands", {}).get("left", {}).get("grace_frames", -1)), 0)
+	assert_false(bool(snapshot.get("hands", {}).get("left", {}).get("predicted", true)))
 	assert_eq(snapshot.get("hands", {}).get("left", {}).get("bbox_preview_rect"), {
 		"x": 40.0,
 		"y": 90.0,

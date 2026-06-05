@@ -67,6 +67,10 @@ tracking:
     validity:
       max_stale_frames: 2
       reacquire_stable_frames: 2
+    grace:
+      enabled: true
+      position_decay: 1.0
+      size_decay: 1.0
 ```
 
 ## Field semantics
@@ -129,6 +133,18 @@ Maximum age, in frames, before a hand sample is considered stale/invalid.
 
 Number of consecutive valid frames required before the tracker reports a reacquired valid hand lane.
 
+### `tracking.hands.grace.enabled`
+
+When true, missing hand detections stay in a tracker-owned `grace` state for up to `tracking.hands.validity.max_stale_frames` frames instead of surfacing as plain stale carry-forward.
+
+### `tracking.hands.grace.position_decay`
+
+Per-grace-frame multiplier applied to the carried bbox movement delta after each prediction step. `1.0` keeps constant motion; `0.0` stops positional extrapolation after the first grace frame.
+
+### `tracking.hands.grace.size_decay`
+
+Per-grace-frame multiplier applied to the carried bbox width/height growth delta after each prediction step. `1.0` keeps constant growth/shrink trend; `0.0` freezes size after the first grace frame.
+
 ## Normalized hand output contract
 
 The tracker layer now owns the per-side hand transport contract exposed in normalized tracking frames:
@@ -137,11 +153,13 @@ The tracker layer now owns the per-side hand transport contract exposed in norma
 hands:
   left|right:
     tracking_valid: true|false
-    tracking_state: disabled|idle|unavailable|reacquiring|tracked|stale|tracking_lost
+    tracking_state: disabled|idle|unavailable|reacquiring|tracked|grace|stale|tracking_lost
     landmark_mode: lite|full
     frame_index: <int>
     timestamp_seconds: <float>
     stale_frames: <int>
+    grace_frames: <int>
+    predicted: true|false
     association:
       side: left|right
       assigned: true|false
@@ -169,7 +187,8 @@ Important semantics:
 - side ownership is tracker-associated upstream from raw MediaPipe hand detections; vendor handedness labels are recorded as metadata only and are not treated as durable left/right truth
 - preview mirroring is applied in the tracker layer so normalized hand coordinates stay aligned with normalized pose coordinates
 - `tracking_valid` becomes `false` during `reacquiring`, `unavailable`, and `tracking_lost`
-- stale carry-forward is allowed only up to `tracking.hands.validity.max_stale_frames`; after that the lane becomes `tracking_lost`
+- `grace` means the tool predicted the hand bbox/landmark placement from the recent tracker-owned trend; these frames still count as valid hand samples for downstream consumers
+- grace/stale carry-forward is allowed only up to `tracking.hands.validity.max_stale_frames`; after that the lane becomes `tracking_lost`
 - if the vendor explicitly reports hand inference unavailable, the tracker must surface `unavailable` instead of pretending stale/tracked data exists
 
 ## Locked profile defaults
@@ -198,6 +217,10 @@ tracking:
     validity:
       max_stale_frames: 2
       reacquire_stable_frames: 2
+    grace:
+      enabled: true
+      position_decay: 1.0
+      size_decay: 1.0
 ```
 
 ### Flow

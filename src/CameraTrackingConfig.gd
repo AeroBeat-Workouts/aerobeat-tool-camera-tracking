@@ -21,6 +21,9 @@ const DEFAULT_HAND_ASSOCIATION_PREFER_EXISTING_POSE_SIDE_BINDING := true
 const DEFAULT_HAND_ASSOCIATION_NEAREST_WRIST_FALLBACK := true
 const DEFAULT_HAND_VALIDITY_MAX_STALE_FRAMES := 2
 const DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_FRAMES := 2
+const DEFAULT_HAND_GRACE_ENABLED := true
+const DEFAULT_HAND_GRACE_POSITION_DECAY := 1.0
+const DEFAULT_HAND_GRACE_SIZE_DECAY := 1.0
 
 static func defaults() -> Dictionary:
 	return {
@@ -55,6 +58,11 @@ static func defaults() -> Dictionary:
 				"validity": {
 					"max_stale_frames": DEFAULT_HAND_VALIDITY_MAX_STALE_FRAMES,
 					"reacquire_stable_frames": DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_FRAMES
+				},
+				"grace": {
+					"enabled": DEFAULT_HAND_GRACE_ENABLED,
+					"position_decay": DEFAULT_HAND_GRACE_POSITION_DECAY,
+					"size_decay": DEFAULT_HAND_GRACE_SIZE_DECAY
 				}
 			}
 		},
@@ -161,6 +169,7 @@ static func _normalize_hands_config(value: Variant) -> Dictionary:
 	hands["bbox"] = bbox
 	hands["association"] = _normalize_hand_association_config(hands.get("association", {}))
 	hands["validity"] = _normalize_hand_validity_config(hands.get("validity", {}))
+	hands["grace"] = _normalize_hand_grace_config(hands.get("grace", {}))
 	return hands
 
 static func _normalize_hand_association_config(value: Variant) -> Dictionary:
@@ -192,6 +201,15 @@ static func _normalize_hand_validity_config(value: Variant) -> Dictionary:
 	)
 	return validity
 
+static func _normalize_hand_grace_config(value: Variant) -> Dictionary:
+	var grace: Dictionary = defaults().get("tracking", {}).get("hands", {}).get("grace", {}).duplicate(true)
+	if value is Dictionary:
+		_deep_merge(grace, value)
+	grace["enabled"] = bool(grace.get("enabled", DEFAULT_HAND_GRACE_ENABLED))
+	grace["position_decay"] = clampf(float(grace.get("position_decay", DEFAULT_HAND_GRACE_POSITION_DECAY)), 0.0, 1.0)
+	grace["size_decay"] = clampf(float(grace.get("size_decay", DEFAULT_HAND_GRACE_SIZE_DECAY)), 0.0, 1.0)
+	return grace
+
 static func _normalize_preview_config(value: Variant) -> Dictionary:
 	var preview: Dictionary = defaults().get("preview", {}).duplicate(true)
 	if value is Dictionary:
@@ -210,6 +228,7 @@ static func _apply_runtime_compatibility(normalized: Dictionary) -> void:
 	var hands: Dictionary = tracking.get("hands", {}) if tracking.get("hands", {}) is Dictionary else {}
 	var validity: Dictionary = hands.get("validity", {}) if hands.get("validity", {}) is Dictionary else {}
 	var bbox: Dictionary = hands.get("bbox", {}) if hands.get("bbox", {}) is Dictionary else {}
+	var grace: Dictionary = hands.get("grace", {}) if hands.get("grace", {}) is Dictionary else {}
 
 	runtime["pose_enabled"] = bool(pose.get("enabled", DEFAULT_POSE_ENABLED))
 	runtime["pose_inference_interval_frames"] = int(
@@ -241,6 +260,12 @@ static func _apply_runtime_compatibility(normalized: Dictionary) -> void:
 		runtime["hand_reacquire_stable_frames"] = int(
 			validity.get("reacquire_stable_frames", DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_FRAMES)
 		)
+	if not runtime.has("hand_grace_enabled"):
+		runtime["hand_grace_enabled"] = bool(grace.get("enabled", DEFAULT_HAND_GRACE_ENABLED))
+	if not runtime.has("hand_grace_position_decay"):
+		runtime["hand_grace_position_decay"] = float(grace.get("position_decay", DEFAULT_HAND_GRACE_POSITION_DECAY))
+	if not runtime.has("hand_grace_size_decay"):
+		runtime["hand_grace_size_decay"] = float(grace.get("size_decay", DEFAULT_HAND_GRACE_SIZE_DECAY))
 	normalized["runtime"] = runtime
 
 static func _normalize_pose_smoothing_style(value: Variant) -> String:

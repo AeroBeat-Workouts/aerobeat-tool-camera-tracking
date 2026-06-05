@@ -30,6 +30,7 @@ const _HAND_STATE_COLORS := {
 	"idle": Color(0.7, 0.7, 0.7, 0.6),
 	"unavailable": Color(0.76, 0.28, 0.95, 0.9),
 	"reacquiring": Color(0.2, 0.95, 0.78, 0.9),
+	"grace": Color(0.55, 0.73, 1.0, 0.95),
 	"stale": Color(1.0, 0.86, 0.2, 0.92),
 	"tracking_lost": Color(0.95, 0.25, 0.25, 0.9),
 }
@@ -183,6 +184,8 @@ func get_hand_debug_snapshot() -> Dictionary:
 			"frame_index": int(payload.get("frame_index", 0)),
 			"timestamp_seconds": float(payload.get("timestamp_seconds", 0.0)),
 			"stale_frames": int(payload.get("stale_frames", 0)),
+			"grace_frames": int(payload.get("grace_frames", 0)),
+			"predicted": bool(payload.get("predicted", false)),
 			"association": payload.get("association", {}).duplicate(true) if payload.get("association", {}) is Dictionary else {},
 			"bbox": bbox.duplicate(true),
 			"bbox_preview_rect": _rect_to_dict(map_bbox_to_preview_rect(bbox)),
