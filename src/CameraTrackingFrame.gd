@@ -397,6 +397,7 @@ static func _assign_hand_candidates(candidates: Array, pose_landmarks: Array, ha
 		unassigned_indices.append(index)
 	var association: Dictionary = hand_tracking.get("association", {}) if hand_tracking.get("association", {}) is Dictionary else {}
 	if bool(association.get("prefer_existing_pose_side_binding", true)):
+		var preferred_requests: Array[Dictionary] = []
 		for side in _HAND_SIDES:
 			var previous_payload: Dictionary = previous_hands.get(side, {}) if previous_hands.get(side, {}) is Dictionary else {}
 			var wrist_anchor := pose_wrists.get(side, {}) if pose_wrists.get(side, {}) is Dictionary else {}
@@ -408,32 +409,61 @@ static func _assign_hand_candidates(candidates: Array, pose_landmarks: Array, ha
 				match_anchor = _hand_payload_anchor(previous_payload)
 			if match_anchor.is_empty():
 				continue
-			var match_index := _nearest_candidate_index(candidates, unassigned_indices, match_anchor)
-			if match_index >= 0:
-				assignments[side] = {
-					"candidate": candidates[match_index],
-					"method": "prefer_existing_pose_side_binding",
-					"distance": _distance_between_points(match_anchor, candidates[match_index].get("anchor", {})),
-					"pose_side_locked": pose_side_locked or wrist_anchor.is_empty() == false
-				}
-				unassigned_indices.erase(match_index)
+			preferred_requests.append({
+				"side": side,
+				"anchor": match_anchor,
+				"method": "prefer_existing_pose_side_binding",
+				"pose_side_locked": pose_side_locked or wrist_anchor.is_empty() == false,
+			})
+		_assign_requests_by_nearest_distance(assignments, candidates, unassigned_indices, preferred_requests)
 	if bool(association.get("nearest_wrist_fallback", true)):
+		var fallback_requests: Array[Dictionary] = []
 		for side in _HAND_SIDES:
 			if assignments.has(side):
 				continue
 			var wrist_anchor := pose_wrists.get(side, {}) if pose_wrists.get(side, {}) is Dictionary else {}
 			if wrist_anchor.is_empty():
 				continue
-			var match_index := _nearest_candidate_index(candidates, unassigned_indices, wrist_anchor)
-			if match_index >= 0:
-				assignments[side] = {
-					"candidate": candidates[match_index],
-					"method": "nearest_wrist_fallback",
-					"distance": _distance_between_points(wrist_anchor, candidates[match_index].get("anchor", {})),
-					"pose_side_locked": true
-				}
-				unassigned_indices.erase(match_index)
+			fallback_requests.append({
+				"side": side,
+				"anchor": wrist_anchor,
+				"method": "nearest_wrist_fallback",
+				"pose_side_locked": true,
+			})
+		_assign_requests_by_nearest_distance(assignments, candidates, unassigned_indices, fallback_requests)
 	return assignments
+
+static func _assign_requests_by_nearest_distance(assignments: Dictionary, candidates: Array, unassigned_indices: Array, requests: Array[Dictionary]) -> void:
+	var pending_requests := requests.duplicate(true)
+	while not pending_requests.is_empty() and not unassigned_indices.is_empty():
+		var best_request_index := -1
+		var best_candidate_index := -1
+		var best_distance := INF
+		for request_index in range(pending_requests.size()):
+			var request: Dictionary = pending_requests[request_index]
+			var target: Dictionary = request.get("anchor", {}) if request.get("anchor", {}) is Dictionary else {}
+			if target.is_empty():
+				continue
+			var match_index := _nearest_candidate_index(candidates, unassigned_indices, target)
+			if match_index < 0:
+				continue
+			var distance := _distance_between_points(target, candidates[match_index].get("anchor", {}))
+			if distance < best_distance:
+				best_distance = distance
+				best_request_index = request_index
+				best_candidate_index = match_index
+		if best_request_index < 0 or best_candidate_index < 0:
+			break
+		var winning_request: Dictionary = pending_requests[best_request_index]
+		var winning_side := str(winning_request.get("side", ""))
+		assignments[winning_side] = {
+			"candidate": candidates[best_candidate_index],
+			"method": str(winning_request.get("method", "none")),
+			"distance": best_distance,
+			"pose_side_locked": bool(winning_request.get("pose_side_locked", false))
+		}
+		unassigned_indices.erase(best_candidate_index)
+		pending_requests.remove_at(best_request_index)
 
 static func _extract_pose_wrists(pose_landmarks: Array) -> Dictionary:
 	var wrists := {
