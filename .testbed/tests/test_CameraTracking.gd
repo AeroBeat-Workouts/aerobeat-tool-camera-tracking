@@ -586,6 +586,51 @@ func test_frame_normalization_reacquire_uses_elapsed_milliseconds() -> void:
 	assert_eq(int(third.get("hands", {}).get("left", {}).get("stable_ms", -1)), 40)
 	assert_true(bool(third.get("hands", {}).get("left", {}).get("tracking_valid", false)))
 
+func test_frame_normalization_ignores_legacy_vendor_frame_timing_aliases() -> void:
+	var config := {
+		"backend": "mediapipe_python",
+		"source": {"kind": "live_camera", "camera_id": "/dev/video0"},
+		"preview": {"flip_horizontal": false},
+		"tracking": {
+			"hands": {
+				"enabled": true,
+				"validity": {
+					"max_stale_ms": 80,
+					"reacquire_stable_ms": 40
+				}
+			}
+		}
+	}
+	var first := CameraTrackingFrame.normalize({
+		"timestamp_ms": 100,
+		"landmarks": [{"id": 15, "x": 0.20, "y": 0.5, "z": 0.0, "visibility": 0.9}],
+		"hands": [{
+			"label": "Left",
+			"score": 0.95,
+			"landmarks": [{"id": 0, "x": 0.21, "y": 0.5, "z": 0.0}],
+			"bbox": {"x": 0.18, "y": 0.42, "width": 0.08, "height": 0.16}
+		}],
+		"vendor_hand_tracking": {
+			"available": true,
+			"max_stale_frames": 2,
+			"reacquire_stable_frames": 2
+		}
+	}, config)
+	var second := CameraTrackingFrame.normalize({
+		"timestamp_ms": 140,
+		"landmarks": [{"id": 15, "x": 0.20, "y": 0.5, "z": 0.0, "visibility": 0.9}],
+		"hands": [],
+		"vendor_hand_tracking": {
+			"available": true,
+			"max_stale_frames": 2,
+			"reacquire_stable_frames": 2
+		}
+	}, config, first)
+	assert_eq(int(first.get("hand_tracking", {}).get("max_stale_ms", -1)), 80)
+	assert_eq(int(first.get("hand_tracking", {}).get("reacquire_stable_ms", -1)), 40)
+	assert_eq(second.get("hands", {}).get("left", {}).get("tracking_state"), "grace")
+	assert_eq(int(second.get("hands", {}).get("left", {}).get("grace_ms", -1)), 40)
+
 func test_frame_normalization_carries_stale_hands_until_validity_budget_expires() -> void:
 	var config := {
 		"backend": "mediapipe_python",

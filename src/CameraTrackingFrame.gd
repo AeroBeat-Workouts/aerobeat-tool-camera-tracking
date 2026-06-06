@@ -139,8 +139,8 @@ static func _normalize_hand_tracking_meta(frame: Dictionary, config: Dictionary)
 		"inference_interval_frames": int(vendor_meta.get("inference_interval_frames", hands_config.get("inference_interval_frames", CameraTrackingConfig.DEFAULT_HAND_INFERENCE_INTERVAL_FRAMES))),
 		"bbox_recompute_interval_frames": int(vendor_meta.get("bbox_recompute_interval_frames", hands_config.get("bbox_recompute_interval_frames", CameraTrackingConfig.DEFAULT_HAND_BBOX_RECOMPUTE_INTERVAL_FRAMES))),
 		"bbox_enabled": bool(vendor_meta.get("bbox_enabled", bbox.get("enabled", true))),
-		"max_stale_ms": int(vendor_meta.get("max_stale_ms", vendor_meta.get("max_stale_frames", validity.get("max_stale_ms", CameraTrackingConfig.DEFAULT_HAND_VALIDITY_MAX_STALE_MS)))),
-		"reacquire_stable_ms": int(vendor_meta.get("reacquire_stable_ms", vendor_meta.get("reacquire_stable_frames", validity.get("reacquire_stable_ms", CameraTrackingConfig.DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_MS)))),
+		"max_stale_ms": int(vendor_meta.get("max_stale_ms", validity.get("max_stale_ms", CameraTrackingConfig.DEFAULT_HAND_VALIDITY_MAX_STALE_MS))),
+		"reacquire_stable_ms": int(vendor_meta.get("reacquire_stable_ms", validity.get("reacquire_stable_ms", CameraTrackingConfig.DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_MS))),
 		"grace": {
 			"enabled": bool(grace.get("enabled", CameraTrackingConfig.DEFAULT_HAND_GRACE_ENABLED)),
 			"position_decay": clampf(float(grace.get("position_decay", CameraTrackingConfig.DEFAULT_HAND_GRACE_POSITION_DECAY)), 0.0, 1.0),
