@@ -58,7 +58,6 @@ tracking:
     enabled: true|false
     landmark_mode: lite
     inference_interval_frames: 1
-    bbox_recompute_interval_frames: 1
     bbox:
       enabled: true
     association:
@@ -107,11 +106,7 @@ Default: `lite`
 
 ### `tracking.hands.inference_interval_frames`
 
-Number of frames between hand inference passes. `1` means every frame.
-
-### `tracking.hands.bbox_recompute_interval_frames`
-
-Number of frames between bbox recomputations from the currently active hand landmarks. `1` means every frame.
+Number of frames between hand inference passes. `1` means every frame. Hand bbox updates happen on the same cadence because bbox geometry is derived from the emitted hand sample.
 
 ### `tracking.hands.bbox.enabled`
 
@@ -212,7 +207,6 @@ tracking:
     enabled: true
     landmark_mode: lite
     inference_interval_frames: 1
-    bbox_recompute_interval_frames: 1
     bbox:
       enabled: true
     association:
@@ -242,7 +236,6 @@ tracking:
     enabled: false
     landmark_mode: lite
     inference_interval_frames: 1
-    bbox_recompute_interval_frames: 1
     bbox:
       enabled: true
     association:
@@ -264,7 +257,6 @@ The tracker repo should validate at minimum:
 - `tracking.pose.smoothing_style` is a supported enum
 - `tracking.hands.landmark_mode` is a supported enum
 - `tracking.hands.inference_interval_frames >= 1`
-- `tracking.hands.bbox_recompute_interval_frames >= 1`
 - `tracking.hands.validity.max_stale_ms >= 0`
 - `tracking.hands.validity.reacquire_stable_ms >= 0`
 

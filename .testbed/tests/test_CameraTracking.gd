@@ -437,7 +437,6 @@ func test_config_normalization_adds_tracker_pose_and_hand_defaults() -> void:
 				"enabled": true,
 				"landmark_mode": "full",
 				"inference_interval_frames": 4,
-				"bbox_recompute_interval_frames": 5,
 				"association": {
 					"prefer_existing_pose_side_binding": false
 				},
@@ -453,7 +452,7 @@ func test_config_normalization_adds_tracker_pose_and_hand_defaults() -> void:
 	assert_eq(config.get("tracking", {}).get("pose", {}).get("smoothing_style"), "lite_raw")
 	assert_eq(config.get("tracking", {}).get("hands", {}).get("enabled"), true)
 	assert_eq(config.get("tracking", {}).get("hands", {}).get("landmark_mode"), "full")
-	assert_eq(config.get("tracking", {}).get("hands", {}).get("bbox_recompute_interval_frames"), 5)
+	assert_false(config.get("tracking", {}).get("hands", {}).has("bbox_recompute_interval_frames"))
 	assert_eq(config.get("tracking", {}).get("hands", {}).get("association", {}).get("prefer_existing_pose_side_binding"), false)
 	assert_eq(config.get("tracking", {}).get("hands", {}).get("association", {}).get("nearest_wrist_fallback"), true)
 	assert_eq(config.get("tracking", {}).get("hands", {}).get("validity", {}).get("max_stale_ms"), 280)
@@ -463,7 +462,7 @@ func test_config_normalization_adds_tracker_pose_and_hand_defaults() -> void:
 	assert_eq(config.get("runtime", {}).get("no_filter"), true)
 	assert_eq(config.get("runtime", {}).get("hand_tracking_enabled"), true)
 	assert_eq(config.get("runtime", {}).get("hand_landmark_mode"), "full")
-	assert_eq(config.get("runtime", {}).get("hand_bbox_recompute_interval_frames"), 5)
+	assert_false(config.get("runtime", {}).has("hand_bbox_recompute_interval_frames"))
 
 func test_frame_normalization_builds_per_side_hand_payload_from_vendor_samples() -> void:
 	var config := {
@@ -475,7 +474,6 @@ func test_frame_normalization_builds_per_side_hand_payload_from_vendor_samples()
 				"enabled": true,
 				"landmark_mode": "lite",
 				"inference_interval_frames": 2,
-				"bbox_recompute_interval_frames": 3,
 				"validity": {
 					"max_stale_ms": 80,
 					"reacquire_stable_ms": 40
@@ -508,7 +506,9 @@ func test_frame_normalization_builds_per_side_hand_payload_from_vendor_samples()
 			"landmark_mode": "lite",
 			"inference_backend": "mediapipe_tasks_hand_landmarker",
 			"inference_interval_frames": 2,
-			"bbox_recompute_interval_frames": 3,
+			"inference_ran": true,
+			"carried_forward": false,
+			"source_frame_index": 1,
 			"max_stale_ms": 80,
 			"reacquire_stable_ms": 40
 		}
@@ -518,16 +518,95 @@ func test_frame_normalization_builds_per_side_hand_payload_from_vendor_samples()
 	assert_eq(frame.get("frame_index"), 1)
 	assert_eq(frame.get("timestamp_seconds"), 0.5)
 	assert_eq(frame.get("hand_tracking", {}).get("inference_interval_frames"), 2)
-	assert_eq(frame.get("hand_tracking", {}).get("bbox_recompute_interval_frames"), 3)
+	assert_false(frame.get("hand_tracking", {}).has("bbox_recompute_interval_frames"))
 	assert_eq(left_hand.get("tracking_state"), "reacquiring")
 	assert_false(left_hand.get("tracking_valid"))
 	assert_eq(left_hand.get("association", {}).get("method"), "nearest_wrist_fallback")
 	assert_eq(left_hand.get("association", {}).get("source_label"), "right")
 	assert_eq(left_hand.get("landmarks", []).size(), 1)
 	assert_eq(left_hand.get("bbox", {}).get("area_unit"), "normalized_frame_area")
+	assert_true(bool(left_hand.get("fresh_sample", false)))
+	assert_eq(String(left_hand.get("sample_source", "")), "fresh_inference")
+	assert_eq(int(left_hand.get("source_frame_index", -1)), 1)
 	assert_eq(right_hand.get("tracking_state"), "reacquiring")
 	assert_false(right_hand.get("tracking_valid"))
 	assert_eq(right_hand.get("association", {}).get("source_label"), "left")
+
+func test_frame_normalization_marks_carried_forward_hand_samples_as_not_fresh() -> void:
+	var config := {
+		"backend": "mediapipe_python",
+		"source": {"kind": "live_camera", "camera_id": "/dev/video0"},
+		"preview": {"flip_horizontal": false},
+		"tracking": {
+			"hands": {
+				"enabled": true,
+				"landmark_mode": "lite",
+				"inference_interval_frames": 3,
+				"validity": {
+					"max_stale_ms": 80,
+					"reacquire_stable_ms": 0
+				}
+			}
+		}
+	}
+	var first := CameraTrackingFrame.normalize({
+		"frame_index": 4,
+		"timestamp_ms": 400,
+		"landmarks": [
+			{"id": 15, "x": 0.25, "y": 0.5, "z": 0.0, "visibility": 0.9}
+		],
+		"hands": [
+			{
+				"label": "Right",
+				"score": 0.91,
+				"landmarks": [{"id": 0, "x": 0.24, "y": 0.49, "z": 0.0}],
+				"bbox": {"x": 0.20, "y": 0.40, "width": 0.10, "height": 0.20}
+			}
+		],
+		"vendor_hand_tracking": {
+			"available": true,
+			"landmark_mode": "lite",
+			"inference_backend": "mediapipe_tasks_hand_landmarker",
+			"inference_interval_frames": 3,
+			"inference_ran": true,
+			"carried_forward": false,
+			"source_frame_index": 4,
+			"max_stale_ms": 80,
+			"reacquire_stable_ms": 0
+		}
+	}, config)
+	var carried := CameraTrackingFrame.normalize({
+		"frame_index": 5,
+		"timestamp_ms": 433,
+		"landmarks": [
+			{"id": 15, "x": 0.25, "y": 0.5, "z": 0.0, "visibility": 0.9}
+		],
+		"hands": [
+			{
+				"label": "Right",
+				"score": 0.91,
+				"landmarks": [{"id": 0, "x": 0.24, "y": 0.49, "z": 0.0}],
+				"bbox": {"x": 0.20, "y": 0.40, "width": 0.10, "height": 0.20}
+			}
+		],
+		"vendor_hand_tracking": {
+			"available": true,
+			"landmark_mode": "lite",
+			"inference_backend": "mediapipe_tasks_hand_landmarker",
+			"inference_interval_frames": 3,
+			"inference_ran": false,
+			"carried_forward": true,
+			"source_frame_index": 4,
+			"max_stale_ms": 80,
+			"reacquire_stable_ms": 0
+		}
+	}, config, first)
+	var hand: Dictionary = carried.get("hands", {}).get("left", {})
+	assert_false(bool(hand.get("fresh_sample", true)))
+	assert_eq(String(hand.get("sample_source", "")), "carried_forward")
+	assert_eq(int(hand.get("source_frame_index", -1)), 4)
+	assert_true(bool(hand.get("tracking_valid", false)))
+	assert_eq(String(hand.get("tracking_state", "")), "tracked")
 
 func test_frame_normalization_reacquire_uses_elapsed_milliseconds() -> void:
 	var config := {

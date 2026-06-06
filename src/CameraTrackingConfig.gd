@@ -15,7 +15,6 @@ const DEFAULT_POSE_SMOOTHING_STYLE := "lite_filtered"
 const DEFAULT_HANDS_ENABLED := false
 const DEFAULT_HAND_LANDMARK_MODE := "lite"
 const DEFAULT_HAND_INFERENCE_INTERVAL_FRAMES := 1
-const DEFAULT_HAND_BBOX_RECOMPUTE_INTERVAL_FRAMES := 1
 const DEFAULT_HAND_BBOX_ENABLED := true
 const DEFAULT_HAND_ASSOCIATION_PREFER_EXISTING_POSE_SIDE_BINDING := true
 const DEFAULT_HAND_ASSOCIATION_NEAREST_WRIST_FALLBACK := true
@@ -47,7 +46,6 @@ static func defaults() -> Dictionary:
 				"enabled": DEFAULT_HANDS_ENABLED,
 				"landmark_mode": DEFAULT_HAND_LANDMARK_MODE,
 				"inference_interval_frames": DEFAULT_HAND_INFERENCE_INTERVAL_FRAMES,
-				"bbox_recompute_interval_frames": DEFAULT_HAND_BBOX_RECOMPUTE_INTERVAL_FRAMES,
 				"bbox": {
 					"enabled": DEFAULT_HAND_BBOX_ENABLED
 				},
@@ -160,10 +158,7 @@ static func _normalize_hands_config(value: Variant) -> Dictionary:
 		hands.get("inference_interval_frames", DEFAULT_HAND_INFERENCE_INTERVAL_FRAMES),
 		DEFAULT_HAND_INFERENCE_INTERVAL_FRAMES
 	)
-	hands["bbox_recompute_interval_frames"] = _normalize_positive_int(
-		hands.get("bbox_recompute_interval_frames", DEFAULT_HAND_BBOX_RECOMPUTE_INTERVAL_FRAMES),
-		DEFAULT_HAND_BBOX_RECOMPUTE_INTERVAL_FRAMES
-	)
+	hands.erase("bbox_recompute_interval_frames")
 	var bbox: Dictionary = hands.get("bbox", {}) if hands.get("bbox", {}) is Dictionary else {}
 	bbox["enabled"] = bool(bbox.get("enabled", DEFAULT_HAND_BBOX_ENABLED))
 	hands["bbox"] = bbox
@@ -248,10 +243,7 @@ static func _apply_runtime_compatibility(normalized: Dictionary) -> void:
 		runtime["hand_inference_interval_frames"] = int(
 			hands.get("inference_interval_frames", DEFAULT_HAND_INFERENCE_INTERVAL_FRAMES)
 		)
-	if not runtime.has("hand_bbox_recompute_interval_frames"):
-		runtime["hand_bbox_recompute_interval_frames"] = int(
-			hands.get("bbox_recompute_interval_frames", DEFAULT_HAND_BBOX_RECOMPUTE_INTERVAL_FRAMES)
-		)
+	runtime.erase("hand_bbox_recompute_interval_frames")
 	if not runtime.has("hand_bbox_enabled"):
 		runtime["hand_bbox_enabled"] = bool(bbox.get("enabled", DEFAULT_HAND_BBOX_ENABLED))
 	if not runtime.has("hand_max_stale_ms"):

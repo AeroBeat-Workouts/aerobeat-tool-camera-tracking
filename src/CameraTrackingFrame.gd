@@ -137,10 +137,12 @@ static func _normalize_hand_tracking_meta(frame: Dictionary, config: Dictionary)
 		"reported_unavailable": reported_unavailable,
 		"landmark_mode": str(vendor_meta.get("landmark_mode", hands_config.get("landmark_mode", CameraTrackingConfig.DEFAULT_HAND_LANDMARK_MODE))),
 		"inference_interval_frames": int(vendor_meta.get("inference_interval_frames", hands_config.get("inference_interval_frames", CameraTrackingConfig.DEFAULT_HAND_INFERENCE_INTERVAL_FRAMES))),
-		"bbox_recompute_interval_frames": int(vendor_meta.get("bbox_recompute_interval_frames", hands_config.get("bbox_recompute_interval_frames", CameraTrackingConfig.DEFAULT_HAND_BBOX_RECOMPUTE_INTERVAL_FRAMES))),
 		"bbox_enabled": bool(vendor_meta.get("bbox_enabled", bbox.get("enabled", true))),
 		"max_stale_ms": int(vendor_meta.get("max_stale_ms", validity.get("max_stale_ms", CameraTrackingConfig.DEFAULT_HAND_VALIDITY_MAX_STALE_MS))),
 		"reacquire_stable_ms": int(vendor_meta.get("reacquire_stable_ms", validity.get("reacquire_stable_ms", CameraTrackingConfig.DEFAULT_HAND_VALIDITY_REACQUIRE_STABLE_MS))),
+		"inference_ran": bool(vendor_meta.get("inference_ran", false)),
+		"carried_forward": bool(vendor_meta.get("carried_forward", false)),
+		"source_frame_index": int(vendor_meta.get("source_frame_index", -1)),
 		"grace": {
 			"enabled": bool(grace.get("enabled", CameraTrackingConfig.DEFAULT_HAND_GRACE_ENABLED)),
 			"position_decay": clampf(float(grace.get("position_decay", CameraTrackingConfig.DEFAULT_HAND_GRACE_POSITION_DECAY)), 0.0, 1.0),
@@ -240,6 +242,9 @@ static func _empty_hand_payload(side: String, hand_tracking: Dictionary) -> Dict
 		"grace_ms": 0,
 		"stable_ms": 0,
 		"predicted": false,
+		"fresh_sample": false,
+		"sample_source": "none",
+		"source_frame_index": -1,
 		"association": _empty_association(side),
 		"landmarks": [],
 		"bbox": _empty_bbox(),
@@ -331,6 +336,9 @@ static func _normalize_hands_by_side(
 					"grace_ms": 0,
 					"stable_ms": int(previous_payload.get("stable_ms", 0)),
 					"predicted": false,
+					"fresh_sample": false,
+					"sample_source": _hand_sample_source(hand_tracking, false),
+					"source_frame_index": int(previous_payload.get("source_frame_index", previous_payload.get("frame_index", frame_index))),
 					"association": previous_payload.get("association", _empty_association(side)).duplicate(true),
 					"landmarks": previous_payload.get("landmarks", []).duplicate(true),
 					"bbox": previous_payload.get("bbox", _empty_bbox()).duplicate(true),
@@ -560,6 +568,15 @@ static func _has_prior_hand_sample(payload: Dictionary) -> bool:
 	var bbox := payload.get("bbox", {}) if payload.get("bbox", {}) is Dictionary else {}
 	return float(bbox.get("area", 0.0)) > 0.0
 
+static func _hand_sample_source(hand_tracking: Dictionary, predicted: bool) -> String:
+	if predicted:
+		return "grace_predicted"
+	if bool(hand_tracking.get("carried_forward", false)):
+		return "carried_forward"
+	if bool(hand_tracking.get("inference_ran", false)):
+		return "fresh_inference"
+	return "unknown"
+
 
 static func _tracked_hand_payload_from_candidate(
 	side: String,
@@ -593,6 +610,9 @@ static func _tracked_hand_payload_from_candidate(
 		"grace_ms": 0,
 		"stable_ms": stable_ms,
 		"predicted": false,
+		"fresh_sample": not bool(hand_tracking.get("carried_forward", false)),
+		"sample_source": _hand_sample_source(hand_tracking, false),
+		"source_frame_index": int(hand_tracking.get("source_frame_index", frame_index)),
 		"association": _association_from_candidate(side, candidate, assignment),
 		"landmarks": candidate.get("landmarks", []).duplicate(true),
 		"bbox": bbox,
@@ -632,6 +652,9 @@ static func _predict_grace_hand_payload(
 		"grace_ms": stale_ms,
 		"stable_ms": int(previous_payload.get("stable_ms", 0)),
 		"predicted": true,
+		"fresh_sample": false,
+		"sample_source": _hand_sample_source(hand_tracking, true),
+		"source_frame_index": int(previous_payload.get("source_frame_index", previous_payload.get("frame_index", frame_index))),
 		"association": previous_payload.get("association", _empty_association(side)).duplicate(true),
 		"landmarks": _predict_landmarks(previous_payload.get("landmarks", []) if previous_payload.get("landmarks", []) is Array else [], previous_bbox, predicted_bbox),
 		"bbox": predicted_bbox,
