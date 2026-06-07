@@ -50,6 +50,7 @@ const CameraTrackingPreviewPresenter = preload("CameraTrackingPreviewPresenter.g
 const _MEDIAPIPE_PYTHON_BACKEND_ID := "mediapipe_python"
 const _MEDIAPIPE_PYTHON_BACKEND_SCRIPT_PATH := "res://addons/aerobeat-vendor-mediapipe-python/src/MediaPipePythonCameraTrackingBackend.gd"
 const _MEDIAPIPE_PYTHON_RUNTIME_BRIDGE_SCRIPT_PATH := "res://addons/aerobeat-vendor-mediapipe-python/src/MediaPipePythonRuntimeBridge.gd"
+const _CONTINUOUS_BACKEND_REFRESH_INTERVAL_MS := 33
 
 class _MediaPipePythonBackendFactory:
 	extends RefCounted
@@ -86,6 +87,8 @@ var _last_cameras: Array = []
 var _close_request_window: Window = null
 var _tree_exit_connected := false
 var _teardown_fallback_in_progress := false
+var _continuous_backend_refresh_interval_ms := _CONTINUOUS_BACKEND_REFRESH_INTERVAL_MS
+var _last_continuous_backend_refresh_ms := -_CONTINUOUS_BACKEND_REFRESH_INTERVAL_MS
 
 func _ready() -> void:
 	set_process(false)
@@ -392,6 +395,8 @@ func _sync_from_backend() -> void:
 func _set_state(next_state: String, detail: Dictionary) -> void:
 	_state = next_state
 	_state_detail = CameraTrackingConfig.make_state_detail(detail)
+	if _state == STATE_RUNNING:
+		_last_continuous_backend_refresh_ms = -_continuous_backend_refresh_interval_ms
 	state_changed.emit(_state, _state_detail.duplicate(true))
 
 func _compose_preview_descriptor(backend_descriptor: Dictionary) -> Dictionary:
@@ -432,12 +437,14 @@ func _fail_with(error_info: Dictionary) -> void:
 	error_raised.emit(_last_error.duplicate(true))
 
 func _process(_delta: float) -> void:
-	_refresh_from_backend_if_running(true)
+	_refresh_from_backend_if_running(true, false)
 
-func _refresh_from_backend_if_running(emit_updates: bool) -> void:
+func _refresh_from_backend_if_running(emit_updates: bool, force: bool = true) -> void:
 	if _backend == null:
 		return
 	if _state != STATE_RUNNING:
+		return
+	if not force and not _should_refresh_backend_continuously_now():
 		return
 
 	var next_frame := CameraTrackingFrame.normalize(_backend.get_tracking_frame(), _active_config, _tracking_frame)
@@ -446,6 +453,7 @@ func _refresh_from_backend_if_running(emit_updates: bool) -> void:
 	_playback_status = _backend.get_playback_status().duplicate(true)
 	_sync_replay_transport_from_backend()
 	_sync_process_state()
+	_mark_continuous_backend_refresh_now()
 
 	if emit_updates and frame_changed_now:
 		tracking_updated.emit(_tracking_frame.duplicate(true))
@@ -453,6 +461,16 @@ func _refresh_from_backend_if_running(emit_updates: bool) -> void:
 func _sync_process_state() -> void:
 	set_process(_backend != null and _state == STATE_RUNNING and is_inside_tree())
 
+func _should_refresh_backend_continuously_now() -> bool:
+	if _continuous_backend_refresh_interval_ms <= 0:
+		return true
+	return _get_refresh_time_ms() - _last_continuous_backend_refresh_ms >= _continuous_backend_refresh_interval_ms
+
+func _mark_continuous_backend_refresh_now() -> void:
+	_last_continuous_backend_refresh_ms = _get_refresh_time_ms()
+
+func _get_refresh_time_ms() -> int:
+	return Time.get_ticks_msec()
 
 func _sync_replay_transport_from_backend() -> void:
 	if _backend == null:

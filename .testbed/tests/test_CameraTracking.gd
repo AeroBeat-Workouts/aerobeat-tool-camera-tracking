@@ -1506,6 +1506,7 @@ func test_camera_tracking_refreshes_continuous_backend_updates_over_time() -> vo
 	tracker.tracking_updated.connect(func(frame: Dictionary): tracking_events.append(frame))
 	tracker.state_changed.connect(func(state: String, detail: Dictionary): state_events.append({"state": state, "detail": detail}))
 	tracker.set_backend(backend)
+	tracker._continuous_backend_refresh_interval_ms = 0
 
 	tracker.start({
 		"backend": "polling_fake",
@@ -1543,6 +1544,7 @@ func test_camera_tracking_uses_cached_public_getters_between_process_ticks() -> 
 	var backend := CountingPollingBackend.new()
 	get_tree().root.add_child(tracker)
 	tracker.set_backend(backend)
+	tracker._continuous_backend_refresh_interval_ms = 100
 	tracker.start({
 		"backend": "polling_fake",
 		"source": {"kind": "live_camera", "camera_id": "/dev/video0"},
@@ -1564,6 +1566,33 @@ func test_camera_tracking_uses_cached_public_getters_between_process_ticks() -> 
 	assert_eq(backend.get_tracking_frame_calls, 1)
 	assert_eq(backend.get_preview_descriptor_calls, 0)
 	assert_eq(backend.list_cameras_calls, 0)
+
+	tracker.queue_free()
+	await get_tree().process_frame
+
+func test_camera_tracking_rate_limits_continuous_process_polling_but_forces_explicit_refreshes() -> void:
+	var tracker := CameraTracking.new()
+	var backend := CountingPollingBackend.new()
+	get_tree().root.add_child(tracker)
+	tracker.set_backend(backend)
+	tracker._continuous_backend_refresh_interval_ms = 100
+	tracker.start({
+		"backend": "polling_fake",
+		"source": {"kind": "live_camera", "camera_id": "/dev/video0"},
+		"preview": {"enabled": true, "flip_horizontal": true}
+	})
+	backend.reset_counts()
+
+	tracker._process(0.0)
+	tracker._process(0.0)
+	assert_eq(backend.get_tracking_frame_calls, 1)
+
+	tracker.get_playback_status()
+	assert_eq(backend.get_tracking_frame_calls, 2)
+
+	tracker.get_replay_transport_capabilities()
+	tracker.get_replay_transport_status()
+	assert_eq(backend.get_tracking_frame_calls, 4)
 
 	tracker.queue_free()
 	await get_tree().process_frame
