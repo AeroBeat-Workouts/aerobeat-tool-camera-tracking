@@ -20,7 +20,7 @@ Derrick reported that when the boxing test scene is left running for a few minut
 
 The likely owner is `aerobeat-tool-camera-tracking` because the error seam points at `src/CameraTrackingPreviewPresenter.gd::_update_preview_texture()`, which repeatedly loads a preview image from disk. The screenshot evidence suggests the preview image can be read while corrupt/partial or otherwise unavailable, causing repeated image-load failures and likely log/CPU churn. Derrick's fresh-session clarification is that the bug was observed from the `aerobeat-input-camera-tracking` boxing validation scene, but the actual fault may still live in this tool repo or its downstream dependency `aerobeat-vendor-mediapipe-python`; repro should prove the true owner rather than assume the consumer scene is the owner.
 
-The slice should stay narrow and truth-oriented: reproduce, identify whether preview writes are atomic, harden the preview load path against transient corrupt files, reduce repeated identical error spam, and verify whether there is any real memory/resource growth over time.
+The slice should stay narrow and truth-oriented: reproduce, identify whether preview writes are atomic, harden the preview load path against transient corrupt files, reduce repeated identical error spam, and verify whether there is any real memory/resource growth over time. If dependency refreshes are needed during validation, use the `godotenv-sync` script so addon/dependency updates avoid unnecessary Godot UID/import noise.
 
 ---
 
