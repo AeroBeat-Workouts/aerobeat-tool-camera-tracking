@@ -128,9 +128,55 @@ Owner-seam decision: **no tool-side presenter change was required in this slice*
 - this plan
 - optional nondurable QA notes/artifacts if needed
 
+**Status:** ✅ Complete
+
+**Results:** 2026-06-06 22:24 EDT — QA completed on the consumer repro surface and **did not clear the slice**. The consumer workbench is definitely exercising the landed vendor change from `e6b69ee`: `.testbed/addons.jsonc` installs `aerobeat-vendor-mediapipe-python` from the sibling repo via `source: "symlink"`, and the consumer-installed `runtime/mediapipe_runtime_probe.py` matched the vendor repo copy byte-for-byte. Because the symlinked install was already current, **no dependency refresh was needed and `godotenv-sync` was not run**.
+
+Exact QA repro used:
+- Repo/runtime: `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking`
+- Scene: `res://scenes/boxing_proving.tscn` from the hidden workbench `.testbed/`
+- Command: `godot --headless --path .testbed res://scenes/boxing_proving.tscn`
+- Short smoke run: 25s captured in `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-preview-fix-qa/smoke.log`
+- Timed long-run validation: 3 minutes sampled every 15s, artifacts under `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-preview-fix-qa/longrun-20260606-221537/`
+
+Observed behavior after the vendor change:
+- The original corrupt-preview-file Godot error shape from `REF-01` (`Error loading image`, `ERR_FILE_CORRUPT`, `Condition "src_image_len == 0"`) **did not appear** in either the smoke run or the 3-minute run.
+- However, the run now fails in the vendor runtime during preview publication with repeated startup-time JSON health errors: `OpenCV(4.13.0) ... could not find a writer for the specified extension in function 'imwrite_'`.
+- The error shape is consistent with the atomic preview helper writing to a temp path that ends in `.tmp` rather than `.jpg`, which prevents OpenCV from inferring an image writer from the filename extension.
+- In the 3-minute run, the boxing harness printed `Boxing harness live`, but the runtime emitted two `runtime_probe_exception` JSON errors at `2026-06-07T02:15:39Z` and `2026-06-07T02:15:41Z`; the log contained 29 total lines and 2 preview-publication failures, so **the old multi-minute error accumulation loop was not reproduced in this headless fixture run because the runtime fails earlier under the new publish path**.
+
+Resource / churn assessment from the timed run:
+- Godot process RSS stayed flat at `145992 KB` from 15s through 180s.
+- `%CPU` settled from `6.4` at 15s down to `4.1` by 2-3 minutes and then stayed flat.
+- This run does **not** show ongoing memory growth or a worsening long-run churn pattern, but it also does **not** validate the fix as acceptable because preview publication is currently broken by the new temp-write path.
+- Fan/noise could not be meaningfully assessed from this headless host run; only CPU/RSS/process stability were measured.
+
+Truthful QA conclusion:
+- The previous preview-frame corrupt-read accumulation appears materially reduced in this repro path because the runtime no longer writes the live JPEG in place.
+- **But the bug is not resolved enough to clear QA**: the landed atomic publish path currently introduces a new preview-frame failure mode (`cv2.imwrite` cannot write the temp filename), so the slice remains blocked pending a follow-up fix in the vendor helper.
+- No durable repo changes were required for QA setup; artifacts were left nondurable under the consumer repo’s `.temp-preview-fix-qa/` folder and were not committed.
+
+---
+
+### Task 3A: Optional follow-up — expose preview-frame performance knobs via YAML
+
+**Bead ID:** `Pending`
+**SubAgent:** `primary`
+**Role:** `coder`
+**References:** `REF-03`, `REF-05`, `REF-06`
+**Prompt:** After the preview-frame correctness fix is QA-cleared, audit which preview-frame publication settings are currently hard-coded or otherwise not fully exposed through the relevant YAML/config surfaces. Then implement the owner-correct config exposure for performance-sensitive knobs Derrick specifically called out, such as preview resolution, compression/quality, and any closely related publication settings that materially affect runtime cost. Keep this as a separate optimization slice from the correctness repair, and use `godotenv-sync` if dependency refreshes are needed during validation to avoid unnecessary Godot UID/import noise.
+
+**Folders Created/Deleted/Modified:**
+- `.plans/`
+- vendor/runtime and config surfaces as appropriate after audit
+
+**Files Created/Deleted/Modified:**
+- Pending; owner seam to be proven during the follow-up audit
+- this plan
+
 **Status:** ⏳ Pending
 
-**Results:** Pending.
+**Results:** Added from Derrick feedback on 2026-06-06 22:11 EDT as a distinct optimization follow-up. Do not mix this into the correctness bugfix QA/audit gate.
 
 ---
 
