@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-06
 **Status:** In Progress
-**Last Updated:** 2026-06-06 23:14 EDT
+**Last Updated:** 2026-06-06 23:50 EDT
 **Blocked Reason:** None
 **Agent:** `pico`
 
@@ -362,6 +362,99 @@ Consumer repro confirmation in `/home/derrick/.openclaw/workspace/projects/aerob
 - Truthful limitation: the overall consumer Godot parent still shows substantial long-run churn, especially on flow RSS, so this slice improves the vendor baseline seam but does **not** prove the full cross-repo bug is QA-clear by itself.
 
 QA handoff: **yes, QA should rerun immediately** on the same 180-second boxing + flow surfaces because the vendor-owner baseline request path is now materially cheaper and the next measured pass can separate remaining Godot/tool/consumer churn from the vendor floor more honestly.
+
+2026-06-06 23:42 EDT — Completed the required **post-vendor-cadence-fix 180-second QA rerun** on the consumer repro surface and the bug is **still not QA-clear**.
+
+Refresh / code-truth check before rerun:
+- Consumer repo: `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking`
+- Tool repo at rerun: `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-tool-camera-tracking` @ `f753bf1` (contains `b290f00` polling fix plus plan-only follow-up commit)
+- Vendor repo at rerun: `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python` @ `0c8dfe6`
+- `.testbed/addons.jsonc` still installs both addons from sibling repos with `source: "symlink"`.
+- Direct `os.path.samefile(...)` checks confirmed the consumer-installed addon files are the same live files as:
+  - `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-tool-camera-tracking/src/CameraTracking.gd`
+  - `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python/runtime/mediapipe_runtime_probe.py`
+- Because the consumer testbed was already on the live sibling repos, **no dependency refresh was needed and `godotenv-sync` was not run**.
+
+Exact rerun commands / artifacts:
+- Artifact root: `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-vendor-cadence-rerun-qa/20260606-233512/`
+- Boxing command: `godot --headless --path .testbed res://scenes/boxing_proving.tscn`
+- Flow command: `godot --headless --path .testbed res://scenes/flow_proving.tscn`
+- Sampling method: 180-second runs with process samples every 15 seconds for both the Godot parent and spawned `mediapipe_runtime_probe.py` child, captured in each scene folder’s `ps-samples.csv`; logs captured as `godot.log`; runtime snapshots copied as `runtime_snapshot.json`.
+
+Preview correctness / corruption truth gate:
+- `rg` across the fresh artifact root found **no** `Error loading image`, `ERR_FILE_CORRUPT`, `Condition "src_image_len == 0"`, `runtime_probe_exception`, `could not find a writer for the specified extension`, or `imwrite_` lines.
+- Boxing runtime snapshot: `last_error: null`, populated `preview_descriptor`, and a real `preview_frame.jpg` at `/home/derrick/.local/share/godot/app_userdata/AeroBeat Camera Tracking Testbed/mediapipe_python_runtime_bridge/sessions/session-1780803313.80639-1047647/preview_frame.jpg`.
+- Flow runtime snapshot: `last_error: null`, populated `preview_descriptor`, and a real `preview_frame.jpg` at `/home/derrick/.local/share/godot/app_userdata/AeroBeat Camera Tracking Testbed/mediapipe_python_runtime_bridge/sessions/session-1780803500.26872-984515/preview_frame.jpg`.
+- Conclusion: **preview corruption remains fixed** and the temp-extension regression remains fixed during the fresh 180-second rerun.
+
+Before/after metrics versus the pre-cadence-fix post-polling QA baseline in `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-post-polling-fix-qa/20260606-225629/`:
+- Boxing at 60s:
+  - Godot: `223156 KB / 96.5% CPU` before → `221284 KB / 96.5% CPU` after
+  - Vendor child: `557864 KB / 213% CPU` before → `548540 KB / 198% CPU` after
+- Boxing at 180s:
+  - Godot: `300340 KB / 98.4% CPU` before → `372180 KB / 98.8% CPU` after
+  - Vendor child: `558680 KB / 212% CPU` before → `550968 KB / 195% CPU` after
+- Flow at 60s:
+  - Godot: `446632 KB / 96.5% CPU` before → `485960 KB / 82.1% CPU` after
+  - Vendor child: `469996 KB / 282% CPU` before → `470204 KB / 134% CPU` after
+- Flow at 180s:
+  - Godot: `748856 KB / 98.0% CPU` before → `1167620 KB / 84.5% CPU` after
+  - Vendor child: `471576 KB / 281% CPU` before → `478456 KB / 140% CPU` after
+
+Truthful QA conclusion from the rerun:
+- The vendor cadence change **materially improved vendor-child CPU**, especially on flow (`282%` → `134%` at 60s; `281%` → `140%` at 180s) and modestly on boxing (`213%` → `198%` at 60s; `212%` → `195%` at 180s).
+- However, the consumer-level bug is **still not QA-clear** because the Godot parent still shows sustained long-run churn and continued RSS growth in both scenes, with the flow repro now ending materially higher in RSS despite lower CPU.
+- Audit should **not** proceed yet on a “bug resolved” claim. Another fix slice is required, focused on the remaining Godot/tool/consumer churn seam rather than the already-fixed preview corruption path.
+
+### Task 3D: Diagnose remaining Godot parent RSS churn after vendor cadence fix
+
+**Bead ID:** `aerobeat-tool-camera-tracking-wsd`
+**SubAgent:** `primary`
+**Role:** `coder`
+**References:** `REF-02`, `REF-05`, `REF-06`
+**Prompt:** The preview corruption bug is fixed and the vendor baseline cadence fix materially reduced vendor-child CPU, but QA still shows sustained long-run Godot parent churn/RSS growth on both `boxing_proving` and `flow_proving`, especially flow. Diagnose the dominant remaining owner seam truthfully. Determine whether the remaining growth is primarily in shared tool-side Godot structures, consumer-scene behavior, testbed/headless harness behavior, or another cross-repo seam. Keep this diagnosis-first and narrowly focused on the parent-process churn that remains after the vendor fixes.
+
+**Folders Created/Deleted/Modified:**
+- `.plans/`
+- `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-parent-churn-diagnosis/`
+- `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.beads/`
+
+**Files Created/Deleted/Modified:**
+- this plan
+- `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-parent-churn-diagnosis/monitor_fixture_timeline.gd`
+- nondurable monitor logs / `ps.csv` artifacts under `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-parent-churn-diagnosis/`
+
+**Status:** ✅ Complete
+
+**Results:** 2026-06-06 23:50 EDT — Diagnosis completed without durable code changes. The dominant remaining owner seam is **not** the shared tool repo and **not** vendor-child baseline anymore; it is the **consumer testbed / headless harness in `aerobeat-input-camera-tracking`**, specifically the shared base proving harness keeping an **unbounded per-pose fixture state timeline** in memory during long-running validation scenes.
+
+Exact evidence gathered:
+- Code inspection in `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.testbed/scripts/proving_harness.gd` shows `_on_pose_updated()` calls `_record_fixture_state_snapshot("pose_updated")` on every pose update. `_record_fixture_state_snapshot()` appends to `_fixture_state_timeline` with no cap or prune path, and each entry duplicates nested dictionaries for `gesture_states`, `ready`, `flow`, and `boxing_debug`.
+- The same harness file initializes `_fixture_state_timeline` as a long-lived array and only clears it on explicit harness reset. That means a normal 3-minute headless validation run continuously accumulates retained debug snapshots in the Godot parent.
+- I proved the retention live with a nondurable monitor script at `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-parent-churn-diagnosis/monitor_fixture_timeline.gd`, run against the actual consumer scenes:
+  - Boxing command: `godot --headless --path .testbed --script /home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-parent-churn-diagnosis/monitor_fixture_timeline.gd -- res://scenes/boxing_proving.tscn`
+  - Flow command: `godot --headless --path .testbed --script /home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-parent-churn-diagnosis/monitor_fixture_timeline.gd -- res://scenes/flow_proving.tscn`
+- Live boxing evidence from `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-parent-churn-diagnosis/boxing-20260606-234800/`:
+  - `_fixture_state_timeline` grew `407 → 850 → 1271 → 1698` entries at `15s → 30s → 45s → 60s`.
+  - Serialized fixture report size grew `2,481,514 → 5,262,569 → 7,906,277 → 10,585,919` bytes over the same window.
+  - Parent RSS grew in lockstep in `ps.csv`: `152752 KB → 174440 KB → 207876 KB → 252724 KB` while CPU stayed high (`81.6% → 95.4%`).
+- Live flow evidence from `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-parent-churn-diagnosis/flow-20260606-234800/`:
+  - `_fixture_state_timeline` grew much faster: `1492 → 3213 → 4844 → 6443` entries at `15s → 30s → 45s → 60s`.
+  - Serialized fixture report size ballooned `9,920,007 → 21,645,443 → 32,762,544 → 43,651,255` bytes by 60s.
+  - Parent RSS followed the same shape in `ps.csv`: `184920 KB → 250016 KB → 312960 KB → 372616 KB` with CPU `82.6% → 95.7%`.
+- This explains why flow still ends materially higher than boxing after the vendor cadence fix: the owner seam is **shared harness retention**, but the retained per-entry payload is heavier in the flow scene, so the same unbounded timeline amplifies flow RSS faster.
+- Owner recommendation: the next fix belongs in `aerobeat-input-camera-tracking`’s shared `.testbed/scripts/proving_harness.gd`, not in `aerobeat-tool-camera-tracking` or `aerobeat-vendor-mediapipe-python`. The harness should cap/prune/disable continuous fixture timeline capture during long-running headless validation, and any full-fidelity capture mode should be explicit/on-demand rather than always-on.
+- Materialized follow-up bead: `aerobeat-input-camera-tracking-b00` — `Bound proving-harness fixture timelines to stop headless Godot RSS churn`.
+- Fix-slice readiness: **yes**. The seam is concrete and owner-correct enough for an immediate implementation slice in the consumer repo.
+
+2026-06-06 23:59 EDT — Landed the consumer-owner implementation slice for bead `aerobeat-input-camera-tracking-b00` in `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking`.
+- Changed `.testbed/scripts/proving_harness.gd` so fixture timeline capture is **bounded by default** instead of unbounded on every pose update. New default behavior keeps all non-pose snapshots, retains only the most recent `240` `pose_updated` snapshots, and reports capture metadata (`mode`, pose snapshot limit, seen/retained/dropped counts) in `get_fixture_capture_report()`.
+- Added explicit runtime escape hatches for debugging instead of silent removal of observability: `AEROBEAT_FIXTURE_STATE_TIMELINE_MODE=full` keeps full-fidelity continuous capture, `events_only` disables continuous pose snapshots while preserving event snapshots, and `AEROBEAT_FIXTURE_POSE_STATE_TIMELINE_LIMIT=<n>` overrides the bounded pose snapshot cap.
+- Added focused regression coverage in `.testbed/tests/unit/test_proving_harness_fixture_timeline.gd` proving both the bounded default behavior and the explicit full-capture mode.
+- Validation run in the consumer repo: `godot --headless --path .testbed --script addons/aerobeat-vendor-godot-unit-test/gut_cmdln.gd -gtest=res://tests/unit/test_proving_harness_fixture_timeline.gd -gexit` → `2/2 passed`.
+- QA should rerun immediately on the same boxing + flow long-run headless repro surfaces, because this slice directly changes the diagnosed dominant Godot-parent RSS owner seam.
+
+---
 
 ### Task 3A: Optional follow-up — expose preview-frame performance knobs via YAML
 
