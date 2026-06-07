@@ -49,6 +49,29 @@ Only the two `*.camera_tracking.yaml` files are tracker-layer inputs.
 ## Locked v1 field set
 
 ```yaml
+source:
+  live_camera:
+    requested_width: 960
+    requested_height: 540
+    requested_fps: 15
+preview:
+  surface_mode: attach
+  flip_horizontal: true
+  live:
+    enabled: true
+    max_fps: 10
+    width: 960
+    height: 540
+    quality: 75
+  replay:
+    enabled: true
+    max_fps: 10
+    width: 960
+    height: 540
+    quality: 75
+  overlays:
+    pose_skeleton_visible: true
+    hand_bbox_visible: true
 tracking:
   pose:
     enabled: true
@@ -74,6 +97,22 @@ tracking:
 
 ## Field semantics
 
+### `source.live_camera.requested_width|requested_height|requested_fps`
+
+These are the tracker-owned public live camera request knobs. They resolve to vendor runtime `live_camera_width`, `live_camera_height`, and `live_camera_fps` only for live-camera sessions. They do not pretend to affect replay decode.
+
+### `preview.live.*` and `preview.replay.*`
+
+These are the source-specific preview feed knobs. The tracker layer resolves the active source block into the legacy runtime-facing `preview.enabled|max_fps|width|height|quality` fields before handing the config to the vendor layer.
+
+### `preview.overlays.pose_skeleton_visible`
+
+Presentation-only intent for the tool-owned pose/skeleton overlay. This is intentionally separate from full video feed enablement.
+
+### `preview.overlays.hand_bbox_visible`
+
+Presentation-only intent for the input-owned hand bbox overlay. The tracker schema carries the public flag, but current proving-scene consumption still happens in the input repo rather than the vendor runtime.
+
 ### `tracking.pose.enabled`
 
 Enables or disables pose production for the tracker session.
@@ -93,7 +132,7 @@ Default: `lite_filtered`
 
 ### `tracking.hands.enabled`
 
-Enables or disables hand tracking work. Flow defaults this to `false`; boxing defaults it to `true`.
+Enables or disables hand tracking work. The current boxing and flow profile assets both default this to `false`, while the schema still keeps the rest of the hand fields stable for future re-enable/tuning passes.
 
 ### `tracking.hands.landmark_mode`
 
@@ -204,7 +243,7 @@ tracking:
     inference_interval_frames: 1
     smoothing_style: lite_filtered
   hands:
-    enabled: true
+    enabled: false
     landmark_mode: lite
     inference_interval_frames: 1
     bbox:

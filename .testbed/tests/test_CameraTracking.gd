@@ -264,6 +264,64 @@ func test_config_normalization_preserves_contract_shape() -> void:
 	assert_eq(normalized.get("tracking", {}).get("quality"), "optimized")
 	assert_false(normalized.get("preview", {}).get("flip_horizontal"))
 
+func test_config_normalization_resolves_live_and_replay_preview_contracts_and_live_camera_requests() -> void:
+	var live_config := CameraTrackingConfig.normalize({
+		"source": {
+			"kind": "live_camera",
+			"camera_id": "/dev/video7",
+			"live_camera": {
+				"requested_width": 1280,
+				"requested_height": 720,
+				"requested_fps": 24,
+			}
+		},
+		"preview": {
+			"surface_mode": "attach",
+			"flip_horizontal": false,
+			"live": {
+				"enabled": false,
+				"max_fps": 6,
+				"width": 640,
+				"height": 360,
+				"quality": 55,
+			},
+			"replay": {
+				"enabled": true,
+				"max_fps": 12,
+				"width": 800,
+				"height": 450,
+				"quality": 82,
+			},
+			"overlays": {
+				"pose_skeleton_visible": false,
+				"hand_bbox_visible": true,
+			}
+		}
+	})
+	assert_false(bool(live_config.get("preview", {}).get("enabled", true)))
+	assert_eq(int(live_config.get("preview", {}).get("max_fps", -1)), 6)
+	assert_eq(int(live_config.get("preview", {}).get("width", -1)), 640)
+	assert_eq(int(live_config.get("runtime", {}).get("preview_width", -1)), 640)
+	assert_eq(int(live_config.get("runtime", {}).get("live_camera_width", -1)), 1280)
+	assert_eq(int(live_config.get("runtime", {}).get("live_camera_height", -1)), 720)
+	assert_eq(int(live_config.get("runtime", {}).get("live_camera_fps", -1)), 24)
+	assert_false(bool(live_config.get("preview", {}).get("overlays", {}).get("pose_skeleton_visible", true)))
+	assert_true(bool(live_config.get("preview", {}).get("overlays", {}).get("hand_bbox_visible", false)))
+
+	var replay_config := CameraTrackingConfig.normalize({
+		"source": {"kind": "video_file", "path": "res://clips/demo.mp4"},
+		"preview": {
+			"live": {"enabled": false, "max_fps": 6, "width": 640, "height": 360, "quality": 55},
+			"replay": {"enabled": true, "max_fps": 12, "width": 800, "height": 450, "quality": 82},
+		}
+	})
+	assert_true(bool(replay_config.get("preview", {}).get("enabled", false)))
+	assert_eq(int(replay_config.get("preview", {}).get("max_fps", -1)), 12)
+	assert_eq(int(replay_config.get("preview", {}).get("width", -1)), 800)
+	assert_eq(int(replay_config.get("preview", {}).get("height", -1)), 450)
+	assert_eq(int(replay_config.get("preview", {}).get("quality", -1)), 82)
+	assert_eq(int(replay_config.get("runtime", {}).get("preview_width", -1)), 800)
+
 func test_backend_request_defaults_to_neutral_alias_and_resolves_to_vendor_backend() -> void:
 	assert_eq(CameraTrackingConfig.defaults().get("backend"), "camera_tracking_default")
 	assert_eq(CameraTrackingConfig.normalize_requested_backend(""), "camera_tracking_default")
