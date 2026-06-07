@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-06
 **Status:** In Progress
-**Last Updated:** 2026-06-06 23:00 EDT
+**Last Updated:** 2026-06-06 23:14 EDT
 **Blocked Reason:** None
 **Agent:** `pico`
 
@@ -128,7 +128,7 @@ Owner-seam decision: **no tool-side presenter change was required in this slice*
 - this plan
 - optional nondurable QA notes/artifacts if needed
 
-**Status:** ❌ Failed
+**Status:** ✅ Complete
 
 **Results:** 2026-06-06 22:24 EDT — QA completed on the consumer repro surface and **did not clear the slice**. The consumer workbench is definitely exercising the landed vendor change from `e6b69ee`: `.testbed/addons.jsonc` installs `aerobeat-vendor-mediapipe-python` from the sibling repo via `source: "symlink"`, and the consumer-installed `runtime/mediapipe_runtime_probe.py` matched the vendor repo copy byte-for-byte. Because the symlinked install was already current, **no dependency refresh was needed and `godotenv-sync` was not run**.
 
@@ -168,6 +168,37 @@ Rerun outcome:
 - The temp-extension regression also stayed gone: no `runtime_probe_exception`, no `could not find a writer for the specified extension`, and no `imwrite_` errors appeared in the rerun logs.
 - **But there is still unacceptable long-run churn on this headless repro surface.** Process samples in `ps-samples.csv` show Godot pinned near one full core while RSS climbed steadily for the entire 3-minute run: `159628 KB / 84.6% CPU` at 15s, `228208 KB / 96.1% CPU` at 60s, `317224 KB / 98.0% CPU` at 120s, and `404524 KB / 98.6% CPU` at 180s.
 - Because preview publication is now working and the old file-corruption loop is absent, this remaining churn is **not** the same corrupt-preview or temp-extension failure mode. It still blocks QA from calling the slice healthy, and audit should **not** proceed yet on a "fully resolved" claim.
+
+2026-06-06 23:14 EDT — Reran QA **after the tool-side polling fix** from tool commit `b290f00`, again confirming the consumer workbench is on the live sibling repos via `.testbed/addons.jsonc` `source: "symlink"` and direct `samefile` checks for both:
+- `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.testbed/addons/aerobeat-tool-camera-tracking/src/CameraTracking.gd`
+- `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.testbed/addons/aerobeat-vendor-mediapipe-python/runtime/mediapipe_runtime_probe.py`
+
+Because both addon installs already resolve to the latest sibling repo files, **no dependency refresh was needed and `godotenv-sync` was not run** for this rerun either.
+
+Exact post-polling-fix QA repro used:
+- Repo/runtime: `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking`
+- Artifact root: `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-post-polling-fix-qa/20260606-225629/`
+- Boxing command: `godot --headless --path .testbed res://scenes/boxing_proving.tscn`
+- Flow command: `godot --headless --path .testbed res://scenes/flow_proving.tscn`
+- Sampling method: 180-second runs with process samples every 15 seconds for the Godot parent plus spawned `mediapipe_runtime_probe.py` child, captured in each scene folder's `ps-samples.csv`; logs captured as `godot.log`.
+
+Post-polling-fix rerun outcome:
+- **Preview correctness remains fixed.** Both scene logs only reached their normal harness-live lines (`[ProvingHarness][Boxing] Boxing harness live` and `[ProvingHarness][Flow] Flow harness live`). Neither log contained the old corrupt-preview signature from `REF-01` (`Error loading image`, `ERR_FILE_CORRUPT`, `Condition "src_image_len == 0"`) or the temp-extension regression signature (`runtime_probe_exception`, `could not find a writer for the specified extension`, `imwrite_`).
+- Latest runtime snapshots under `/home/derrick/.local/share/godot/app_userdata/AeroBeat Camera Tracking Testbed/mediapipe_python_runtime_bridge/sessions/` still show `last_error: null` and populated `preview_descriptor` objects that point at real `preview_frame.jpg` files with `image_format: "jpg"`, so the preview corruption bug stayed fixed during the rerun.
+- **The polling fix did not materially reduce the headless churn enough to clear QA.** Godot still saturates roughly one CPU core and its RSS keeps climbing for the full 180-second window in both repro scenes:
+  - Boxing `ps-samples.csv`: `164096 KB / 88.8% CPU` at 15s → `223156 KB / 96.5% CPU` at 60s → `300340 KB / 98.4% CPU` at 180s.
+  - Flow `ps-samples.csv`: `221012 KB / 88.8% CPU` at 15s → `446632 KB / 96.5% CPU` at 60s → `748856 KB / 98.0% CPU` at 180s.
+- Before/after comparison versus the pre-polling-fix diagnosis artifacts in `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-churn-diagnosis/` shows only a small short-run change at the 60-second mark, not a material behavior change:
+  - Boxing Godot at 60s: `235652 KB / 96.3% CPU` before → `223156 KB / 96.5% CPU` after.
+  - Flow Godot at 60s: `462428 KB / 96.4% CPU` before → `446632 KB / 96.5% CPU` after.
+- The vendor child baseline also remains essentially unchanged, which matches the earlier diagnosis that the vendor runtime is its own secondary seam:
+  - Boxing Python at 60s: `550976 KB / 210% CPU` before → `557864 KB / 213% CPU` after.
+  - Flow Python at 60s: `472644 KB / 283% CPU` before → `469996 KB / 282% CPU` after.
+
+Truthful QA conclusion after the post-polling-fix rerun:
+- **Preview corruption is still fixed** and the temp-extension regression remains fixed.
+- **The bug is not QA-clear overall.** The tool-side polling fix from `b290f00` did not materially change the long-run churn shape on the two required headless consumer repro surfaces, so audit should still not treat the overall bug as resolved.
+- The next slice should stay focused on the already-materialized vendor baseline/performance bead (`aerobeat-vendor-mediapipe-python-06l`) rather than treating it as optional follow-up, because the remaining measured churn is now dominated by the vendor runtime/high-baseline seam after preview correctness and the first tool polling seam were both addressed.
 
 ---
 
@@ -287,6 +318,50 @@ Commits:
 - Pending
 
 QA handoff: **yes, QA should rerun immediately** against the same headless boxing and flow repro surfaces because this slice directly changes the diagnosed primary Godot-side churn owner seam after preview correctness was already fixed.
+
+### Task 3E: Reduce vendor baseline cadence defaults after preview correctness fix
+
+**Bead ID:** `aerobeat-vendor-mediapipe-python-06l`
+**SubAgent:** `primary`
+**Role:** `coder`
+**References:** `REF-05`, `REF-06`
+**Prompt:** Profile the remaining vendor-owned continuous runtime baseline after the preview corruption and temp-extension bugs are fixed, then land the narrowest owner-correct vendor change that materially reduces sustained CPU/RSS churn without reopening the preview bug or widening into unrelated tuning.
+
+**Folders Created/Deleted/Modified:**
+- `.plans/`
+- `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python/runtime/`
+- `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python/runtime/tests/`
+- `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python/src/`
+- `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python/.testbed/tests/`
+
+**Files Created/Deleted/Modified:**
+- `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python/runtime/mediapipe_runtime_probe.py`
+- `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python/src/MediaPipePythonConfig.gd`
+- `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python/runtime/tests/test_mediapipe_runtime_probe.py`
+- `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python/.testbed/tests/test_mediapipe_python_runtime_bridge.gd`
+- `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python/README.md`
+- this plan
+
+**Status:** ✅ Complete
+
+**Results:** 2026-06-06 23:39 EDT — Diagnosed the remaining vendor baseline by differential replay profiling from the vendor repo instead of guessing. Using the same boxed replay input as the earlier direct-runtime probe, I compared vendor-owned runtime knobs under `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python/.temp-churn-diagnosis/`:
+- `vendor-runtime-knob-sweep-20260606-2306/` showed preview/state writes are secondary costs (`baseline` `553196 KB / 215% CPU` at 60s vs `state_5_preview_5` `551176 KB / 203% CPU`), but the largest trustworthy owner-side lever is continuous tracking cadence, not the already-fixed preview publish path.
+- `vendor-runtime-fps-sweep-20260606-2319/` showed lowering vendor cadence has a material direct-runtime effect while preserving the same owner boundary: `baseline_30_30_30` measured `547048 KB / 212% CPU` at 60s, `tracking_20_state_20_preview_10` measured `547056 KB / 207% CPU`, and `tracking_15_state_15_preview_10` measured `545428 KB / 184% CPU`. An even lower `tracking_10_state_10_preview_5` run reached `545600 KB / 122% CPU`, but that was a larger behavioral step than needed for this slice.
+
+Landed the narrowest durable fix in `aerobeat-vendor-mediapipe-python`: reduced the **default** vendor continuous-session cadence from `30/30/30` to `15/15/10` for tracking/state/preview. This keeps all existing knobs and override paths intact, but makes the default runtime cheaper on the current consumer repros without changing the already-correct preview publication semantics.
+
+Repo-local validation in `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python`:
+- `python3 -m unittest runtime.tests.test_mediapipe_runtime_probe`
+- `godot --headless --path .testbed --script addons/aerobeat-vendor-godot-unit-test/gut_cmdln.gd -gtest=res://tests/test_mediapipe_python_runtime_bridge.gd -gexit`
+
+Consumer repro confirmation in `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking` proved the live request path now picks up the reduced vendor defaults with no dependency refresh because `.testbed/addons.jsonc` still uses sibling-repo symlinks:
+- 60s artifacts: `.temp-vendor-default-cadence-qa/20260606-232144/`
+- 180s artifacts: `.temp-vendor-default-cadence-qa-180s/20260606-232423/`
+- Both boxing and flow runtime `request.json` files now show `tracking_max_fps=15`, `state_update_max_fps=15`, and `preview_max_fps=10`.
+- Vendor-child CPU fell materially on the flow repro (`282%` at 60s before → `131%` after, `139%` at 180s) and modestly on boxing (`213%` at 60s before → `195%` after, `193%` at 180s). RSS stayed roughly flat in the vendor child (~`454-551 MB`) instead of being the dominant rising surface.
+- Truthful limitation: the overall consumer Godot parent still shows substantial long-run churn, especially on flow RSS, so this slice improves the vendor baseline seam but does **not** prove the full cross-repo bug is QA-clear by itself.
+
+QA handoff: **yes, QA should rerun immediately** on the same 180-second boxing + flow surfaces because the vendor-owner baseline request path is now materially cheaper and the next measured pass can separate remaining Godot/tool/consumer churn from the vendor floor more honestly.
 
 ### Task 3A: Optional follow-up — expose preview-frame performance knobs via YAML
 
