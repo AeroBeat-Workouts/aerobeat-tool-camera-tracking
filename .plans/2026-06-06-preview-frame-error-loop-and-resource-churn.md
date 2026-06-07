@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-06
 **Status:** In Progress
-**Last Updated:** 2026-06-06 22:10 EDT
+**Last Updated:** 2026-06-06 22:28 EDT
 **Blocked Reason:** None
 **Agent:** `pico`
 
@@ -155,6 +155,39 @@ Truthful QA conclusion:
 - The previous preview-frame corrupt-read accumulation appears materially reduced in this repro path because the runtime no longer writes the live JPEG in place.
 - **But the bug is not resolved enough to clear QA**: the landed atomic publish path currently introduces a new preview-frame failure mode (`cv2.imwrite` cannot write the temp filename), so the slice remains blocked pending a follow-up fix in the vendor helper.
 - No durable repo changes were required for QA setup; artifacts were left nondurable under the consumer repo’s `.temp-preview-fix-qa/` folder and were not committed.
+
+---
+
+### Task 3B: Repair atomic temp-extension regression in vendor preview publish path
+
+**Bead ID:** `aerobeat-tool-camera-tracking-82a`
+**SubAgent:** `primary`
+**Role:** `coder`
+**References:** `REF-05`, `REF-06`
+**Prompt:** Repair the regression introduced by the first atomic preview publish fix: OpenCV cannot infer the writer when the temp filename loses the `.jpg` extension. Keep the atomic publish behavior, but make the temp-write path preserve a writable image extension so preview publication works again. Keep this narrow and owner-correct in `aerobeat-vendor-mediapipe-python`, then hand back to QA on the same boxing validation repro surface.
+
+**Folders Created/Deleted/Modified:**
+- `.plans/`
+- `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python/runtime/`
+- `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python/runtime/tests/`
+
+**Files Created/Deleted/Modified:**
+- `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python/runtime/mediapipe_runtime_probe.py`
+- `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python/runtime/tests/test_mediapipe_runtime_probe.py`
+- this plan
+
+**Status:** ✅ Complete
+
+**Results:** 2026-06-06 22:28 EDT — Repaired the vendor atomic-preview regression narrowly in `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python` by keeping the atomic `os.replace(...)` publish path but changing the temp image path construction so it preserves the final file extension. `_write_image_atomic(...)` now writes preview temps as `preview_frame.<pid>.<time_ns>.jpg` instead of `preview_frame.jpg.<pid>.<time_ns>.tmp`, which restores OpenCV encoder inference while preserving same-directory atomic replacement semantics. Updated the targeted unit test to assert both behaviors: the write still targets a distinct temp file and the temp filename still ends with `.jpg`.
+
+Validation run in `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python`:
+- `python3 -m unittest runtime.tests.test_mediapipe_runtime_probe.MediaPipeRuntimeProbeTests.test_write_preview_frame_writes_temp_file_then_atomically_replaces_final_path`
+- `python3 -m unittest runtime.tests.test_mediapipe_runtime_probe`
+
+Commits:
+- `b380fe0` — Preserve JPEG extension during atomic preview writes
+
+Next handoff: QA should rerun immediately against the same boxing validation repro surface because the prior blocker was specifically the temp-extension regression now fixed in the vendor owner seam.
 
 ---
 
