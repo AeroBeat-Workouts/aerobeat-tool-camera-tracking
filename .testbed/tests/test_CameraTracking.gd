@@ -487,6 +487,8 @@ func test_frame_normalization_keeps_tracking_idle_when_no_public_landmarks_exist
 func test_config_normalization_adds_tracker_pose_and_hand_defaults() -> void:
 	var config := CameraTrackingConfig.normalize({
 		"tracking": {
+			"max_fps": 30,
+			"state_update_max_fps": 24,
 			"pose": {
 				"smoothing_style": "lite_raw",
 				"inference_interval_frames": 3
@@ -505,6 +507,8 @@ func test_config_normalization_adds_tracker_pose_and_hand_defaults() -> void:
 			}
 		}
 	})
+	assert_eq(config.get("tracking", {}).get("max_fps"), 30)
+	assert_eq(config.get("tracking", {}).get("state_update_max_fps"), 24)
 	assert_eq(config.get("tracking", {}).get("pose", {}).get("enabled"), true)
 	assert_eq(config.get("tracking", {}).get("pose", {}).get("inference_interval_frames"), 3)
 	assert_eq(config.get("tracking", {}).get("pose", {}).get("smoothing_style"), "lite_raw")
@@ -520,6 +524,8 @@ func test_config_normalization_adds_tracker_pose_and_hand_defaults() -> void:
 	assert_eq(config.get("runtime", {}).get("no_filter"), true)
 	assert_eq(config.get("runtime", {}).get("hand_tracking_enabled"), true)
 	assert_eq(config.get("runtime", {}).get("hand_landmark_mode"), "full")
+	assert_eq(config.get("runtime", {}).get("tracking_max_fps"), 30)
+	assert_eq(config.get("runtime", {}).get("state_update_max_fps"), 24)
 	assert_false(config.get("runtime", {}).has("hand_bbox_recompute_interval_frames"))
 
 func test_frame_normalization_builds_per_side_hand_payload_from_vendor_samples() -> void:

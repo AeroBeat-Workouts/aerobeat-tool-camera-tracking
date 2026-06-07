@@ -8,6 +8,8 @@ const DEFAULT_TRACKING_QUALITY := "optimized"
 const DEFAULT_OVERLAY_MODE := "optimized"
 const DEFAULT_MIN_VISIBILITY := 0.35
 const DEFAULT_GESTURE_EVAL_INTERVAL_FRAMES := 1
+const DEFAULT_TRACKING_MAX_FPS := 15
+const DEFAULT_STATE_UPDATE_MAX_FPS := 15
 const DEFAULT_SURFACE_MODE := "attach"
 const DEFAULT_PREVIEW_MAX_FPS := 10
 const DEFAULT_PREVIEW_WIDTH := 960
@@ -51,6 +53,8 @@ static func defaults() -> Dictionary:
 			"overlay_mode": DEFAULT_OVERLAY_MODE,
 			"gesture_eval_interval_frames": DEFAULT_GESTURE_EVAL_INTERVAL_FRAMES,
 			"min_visibility": DEFAULT_MIN_VISIBILITY,
+			"max_fps": DEFAULT_TRACKING_MAX_FPS,
+			"state_update_max_fps": DEFAULT_STATE_UPDATE_MAX_FPS,
 			"pose": {
 				"enabled": DEFAULT_POSE_ENABLED,
 				"inference_interval_frames": DEFAULT_POSE_INFERENCE_INTERVAL_FRAMES,
@@ -185,6 +189,14 @@ static func _normalize_tracking_config(value: Variant) -> Dictionary:
 		DEFAULT_GESTURE_EVAL_INTERVAL_FRAMES
 	)
 	tracking["min_visibility"] = clampf(float(tracking.get("min_visibility", DEFAULT_MIN_VISIBILITY)), 0.0, 1.0)
+	tracking["max_fps"] = _normalize_nonnegative_int(
+		tracking.get("max_fps", DEFAULT_TRACKING_MAX_FPS),
+		DEFAULT_TRACKING_MAX_FPS
+	)
+	tracking["state_update_max_fps"] = _normalize_nonnegative_int(
+		tracking.get("state_update_max_fps", DEFAULT_STATE_UPDATE_MAX_FPS),
+		DEFAULT_STATE_UPDATE_MAX_FPS
+	)
 	tracking["pose"] = _normalize_pose_config(tracking.get("pose", {}))
 	tracking["hands"] = _normalize_hands_config(tracking.get("hands", {}))
 	return tracking
@@ -364,6 +376,10 @@ static func _apply_runtime_compatibility(normalized: Dictionary) -> void:
 		runtime["hand_grace_position_decay"] = float(grace.get("position_decay", DEFAULT_HAND_GRACE_POSITION_DECAY))
 	if not runtime.has("hand_grace_size_decay"):
 		runtime["hand_grace_size_decay"] = float(grace.get("size_decay", DEFAULT_HAND_GRACE_SIZE_DECAY))
+	if not runtime.has("tracking_max_fps"):
+		runtime["tracking_max_fps"] = int(tracking.get("max_fps", DEFAULT_TRACKING_MAX_FPS))
+	if not runtime.has("state_update_max_fps"):
+		runtime["state_update_max_fps"] = int(tracking.get("state_update_max_fps", DEFAULT_STATE_UPDATE_MAX_FPS))
 	if not runtime.has("preview_enabled"):
 		runtime["preview_enabled"] = bool(preview.get("enabled", true))
 	if not runtime.has("preview_max_fps"):

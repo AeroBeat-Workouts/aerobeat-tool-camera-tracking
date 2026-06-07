@@ -73,6 +73,8 @@ preview:
     pose_skeleton_visible: true
     hand_bbox_visible: true
 tracking:
+  max_fps: 30
+  state_update_max_fps: 30
   pose:
     enabled: true
     inference_interval_frames: 1
@@ -112,6 +114,14 @@ Presentation-only intent for the tool-owned pose/skeleton overlay. This is inten
 ### `preview.overlays.hand_bbox_visible`
 
 Presentation-only intent for the input-owned hand bbox overlay. The tracker schema carries the public flag, but current proving-scene consumption still happens in the input repo rather than the vendor runtime.
+
+### `tracking.max_fps`
+
+Requested upper bound for tracker/inference cadence. This maps to vendor runtime `tracking_max_fps`. It is a cap/request, not a hardware guarantee.
+
+### `tracking.state_update_max_fps`
+
+Requested upper bound for how often runtime state updates are emitted. This maps to vendor runtime `state_update_max_fps`. Preview writes cannot exceed this cadence even if `preview.*.max_fps` is set higher.
 
 ### `tracking.pose.enabled`
 
@@ -238,6 +248,8 @@ schema: aerobeat/camera_tracking_config
 version: 1
 profile: boxing
 tracking:
+  max_fps: 30
+  state_update_max_fps: 30
   pose:
     enabled: true
     inference_interval_frames: 1
@@ -267,6 +279,8 @@ schema: aerobeat/camera_tracking_config
 version: 1
 profile: flow
 tracking:
+  max_fps: 30
+  state_update_max_fps: 30
   pose:
     enabled: true
     inference_interval_frames: 1
