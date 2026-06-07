@@ -1,8 +1,8 @@
 # AeroBeat Preview Frame Error Loop And Resource Churn
 
 **Date:** 2026-06-06
-**Status:** In Progress
-**Last Updated:** 2026-06-06 23:50 EDT
+**Status:** Complete
+**Last Updated:** 2026-06-07 00:20 EDT
 **Blocked Reason:** None
 **Agent:** `pico`
 
@@ -454,6 +454,53 @@ Exact evidence gathered:
 - Validation run in the consumer repo: `godot --headless --path .testbed --script addons/aerobeat-vendor-godot-unit-test/gut_cmdln.gd -gtest=res://tests/unit/test_proving_harness_fixture_timeline.gd -gexit` → `2/2 passed`.
 - QA should rerun immediately on the same boxing + flow long-run headless repro surfaces, because this slice directly changes the diagnosed dominant Godot-parent RSS owner seam.
 
+2026-06-07 00:13 EDT — Completed the required **post-consumer-fixture-retention-fix QA rerun** on the same headless consumer repro surfaces, and this time the long-run churn bug is **QA-clear**.
+
+Refresh / code-truth check before rerun:
+- Consumer repo: `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking` @ `ea3b034`
+- Tool repo at rerun: `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-tool-camera-tracking` @ `aa10141`
+- Vendor repo at rerun: `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python` @ `0c8dfe6`
+- `.testbed/addons.jsonc` still installs both addons from sibling repos with `source: "symlink"`.
+- Direct `os.path.samefile(...)` checks confirmed the consumer-installed addon files are the same live files as the sibling repo sources for `src/CameraTracking.gd` and `runtime/mediapipe_runtime_probe.py`.
+- Because the consumer testbed was already on the live sibling repos, **no dependency refresh was needed and `godotenv-sync` was not run**.
+
+Exact rerun commands / artifacts:
+- Artifact root: `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-post-consumer-fixture-fix-qa/20260607-000111/`
+- Boxing command: `godot --headless --path .testbed res://scenes/boxing_proving.tscn`
+- Flow command: `godot --headless --path .testbed res://scenes/flow_proving.tscn`
+- Sampling method: 180-second runs with process samples every 15 seconds for both the Godot parent and spawned `mediapipe_runtime_probe.py` child, captured in each scene folder’s `ps-samples.csv`; logs captured as `godot.log`.
+- Fixture-capture truth gate: separate 60-second headless scene captures using nondurable helper script `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-post-consumer-fixture-fix-qa-capture.gd`, producing `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-post-consumer-fixture-fix-qa/20260607-000111/boxing-fixture-report.json` and `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-post-consumer-fixture-fix-qa/20260607-000111/flow-fixture-report.json`.
+
+Preview correctness / corruption truth gate:
+- Fresh `rg` across the new boxing + flow logs found **no** `Error loading image`, `ERR_FILE_CORRUPT`, `Condition "src_image_len == 0"`, `runtime_probe_exception`, `could not find a writer for the specified extension`, or `imwrite_` lines.
+- Both logs still reached their normal harness-live lines (`[ProvingHarness][Boxing] Boxing harness live` and `[ProvingHarness][Flow] Flow harness live`).
+- The newest corresponding runtime session snapshots under `/home/derrick/.local/share/godot/app_userdata/AeroBeat Camera Tracking Testbed/mediapipe_python_runtime_bridge/sessions/` both show `last_error: null`, populated `preview_descriptor` objects, and real `preview_frame.jpg` files on disk.
+- Conclusion: **preview corruption remains fixed** and the temp-extension regression remains fixed during the fresh rerun.
+
+Before/after metrics versus the pre-consumer-fix QA baseline in `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-vendor-cadence-rerun-qa/20260606-233512/`:
+- Boxing at 60s:
+  - Godot: `221284 KB / 96.5% CPU` before → `150280 KB / 96.5% CPU` after
+  - Vendor child: `548540 KB / 198% CPU` before → `469376 KB / 142% CPU` after
+- Boxing at 180s:
+  - Godot: `372180 KB / 98.8% CPU` before → `150280 KB / 98.7% CPU` after
+  - Vendor child: `550968 KB / 195% CPU` before → `477276 KB / 136% CPU` after
+- Flow at 60s:
+  - Godot: `485960 KB / 82.1% CPU` before → `142440 KB / 82.9% CPU` after
+  - Vendor child: `470204 KB / 134% CPU` before → `471956 KB / 131% CPU` after
+- Flow at 180s:
+  - Godot: `1167620 KB / 84.5% CPU` before → `144396 KB / 85.0% CPU` after
+  - Vendor child: `478456 KB / 140% CPU` before → `473988 KB / 128% CPU` after
+
+Fixture retention / capture-report truth gate:
+- Boxing `boxing-fixture-report.json` reports `state_timeline_capture.mode="bounded"`, `pose_snapshot_limit=240`, `pose_snapshots_seen=3660`, `pose_snapshots_retained=240`, `pose_snapshots_dropped=3420`, and `state_timeline_len=243` at the 60-second capture point.
+- Flow `flow-fixture-report.json` reports `state_timeline_capture.mode="bounded"`, `pose_snapshot_limit=240`, `pose_snapshots_seen=9035`, `pose_snapshots_retained=240`, `pose_snapshots_dropped=8795`, and `state_timeline_len=243` at the 60-second capture point.
+- These counters prove the new bounded-retention policy is actually engaged during live runs, not just configured in code.
+
+Truthful QA conclusion from the rerun:
+- **Yes — the bug is QA-clear now.** The preview corruption bug stayed fixed, the vendor child remains materially improved from the earlier owner-side cadence work, and the previously dominant Godot parent RSS churn is gone on both required 180-second consumer repro surfaces after the consumer harness retention fix.
+- The Godot parent still burns a high steady-state CPU core in these headless proving scenes, so there is room for future optimization work, but the measured long-run **growth/churn** problem that blocked QA is no longer present in this slice.
+- Audit can proceed immediately on the resolved preview/resource-churn workstream.
+
 ---
 
 ### Task 3A: Optional follow-up — expose preview-frame performance knobs via YAML
@@ -494,25 +541,46 @@ Exact evidence gathered:
 - this plan
 - optional nondurable audit notes/artifacts if needed
 
-**Status:** ⏳ Pending
+**Status:** ✅ Complete
 
-**Results:** Pending.
+**Results:** 2026-06-07 00:20 EDT — Independent audit passed. I verified the root-cause chain and final owner seams against the actual landed code, commit history, regression tests, and saved QA artifacts across all three touched repos rather than relying on summaries.
+
+Audit evidence checked:
+- **Vendor preview corruption fix owner seam:** `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-vendor-mediapipe-python/runtime/mediapipe_runtime_probe.py` at commits `e6b69ee` and `b380fe0` now publishes `preview_frame.jpg` through `_write_image_atomic(...)` and preserves the `.jpg` suffix on the temp path before `os.replace(...)`, which matches the diagnosed partial-file race and also fixes the temporary extension regression. The targeted regression coverage in `runtime/tests/test_mediapipe_runtime_probe.py` passed again during this audit via `python3 -m unittest runtime.tests.test_mediapipe_runtime_probe` (`38 tests`, `OK`).
+- **Tool polling-churn fix owner seam:** `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-tool-camera-tracking/src/CameraTracking.gd` at commit `b290f00` now rate-limits continuous `_process()` polling through `_refresh_from_backend_if_running(true, false)` with a 33 ms cadence gate while preserving forced refreshes on explicit public getter / replay-control paths. Regression coverage in `.testbed/tests/test_CameraTracking.gd` includes `test_camera_tracking_rate_limits_continuous_process_polling_but_forces_explicit_refreshes`; the full targeted suite passed again during this audit (`40/40 passed`).
+- **Consumer parent-RSS churn fix owner seam:** `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.testbed/scripts/proving_harness.gd` at commit `ea3b034` now bounds long-lived pose snapshot retention by default, exposes explicit debug escape hatches (`AEROBEAT_FIXTURE_STATE_TIMELINE_MODE`, `AEROBEAT_FIXTURE_POSE_STATE_TIMELINE_LIMIT`), and reports retained/dropped counters through `get_fixture_capture_report()`. The focused regression suite in `.testbed/tests/unit/test_proving_harness_fixture_timeline.gd` passed again during this audit (`2/2 passed`).
+- **Saved QA artifact truth check:** I independently checked the fresh post-fix artifact roots in `/home/derrick/.openclaw/workspace/projects/aerobeat/aerobeat-input-camera-tracking/.temp-post-consumer-fixture-fix-qa/20260607-000111/` and the immediately prior pre-consumer-fix baseline in `.temp-vendor-cadence-rerun-qa/20260606-233512/`. The new logs contain no `Error loading image`, `ERR_FILE_CORRUPT`, `src_image_len == 0`, `runtime_probe_exception`, `could not find a writer for the specified extension`, or `imwrite_` signatures. The saved 180-second process samples confirm the claimed stabilization: Boxing Godot `372180 KB / 98.8%` before → `150280 KB / 98.7%` after; Flow Godot `1167620 KB / 84.5%` before → `144396 KB / 85.0%` after.
+- **Bounded-retention live truth gate:** I read the saved fixture-capture reports `boxing-fixture-report.json` and `flow-fixture-report.json` under the same QA artifact root and confirmed the fix was active during live runs, not just present in code: both report `mode="bounded"`, `pose_snapshot_limit=240`, and only `243` retained timeline entries after 60 seconds despite thousands of seen pose snapshots (`3660 seen / 240 retained / 3420 dropped` for boxing; `9035 seen / 240 retained / 8795 dropped` for flow).
+- **Runtime snapshot truth gate:** The latest corresponding runtime session snapshots under `/home/derrick/.local/share/godot/app_userdata/AeroBeat Camera Tracking Testbed/mediapipe_python_runtime_bridge/sessions/` show `last_error = null`, populated `preview_descriptor` objects, and real `preview_frame.jpg` files on disk, which matches the QA claim that preview publication and preview correctness both remained healthy in the final rerun.
+
+Audit verdict:
+- **Preview corruption bug fixed:** yes.
+- **Temp-extension regression fixed:** yes.
+- **Vendor baseline reduced enough for this addressed bug slice:** yes — the vendor cadence change materially reduced the vendor floor and removed it as the dominant blocker for this plan, even though future optimization remains possible.
+- **Parent RSS churn bug fixed by bounded fixture retention:** yes.
+- **Unresolved blocker remaining for this specific plan:** none.
+
+Landability decision: this plan is now truthfully landable and can be archived once the coordinating orchestrator performs its normal wrap-up/commit flow.
 
 ---
 
 ## Final Results
 
-**Status:** ⚠️ Planned / Not Yet Executed
+**Status:** ✅ Complete
 
-**What We Built:** Created a fresh owner-repo plan for the new preview-frame error-loop / possible resource-churn bug, with screenshot evidence and Derrick's repro notes recorded for the next clean session.
+**What We Built:** Root-caused and resolved a cross-repo preview-frame corruption / churn workstream. The final landed state combines: (1) atomic vendor preview publication with preserved `.jpg` temp extension, (2) tool-side cadence-gating of continuous backend polling, (3) vendor default cadence reduction to lower the continuous runtime floor, and (4) consumer-side bounded fixture retention to eliminate the dominant remaining Godot parent RSS churn.
 
-**Reference Check:** `REF-01` and `REF-02` are captured directly in this plan so the next session can begin from the actual evidence instead of memory. `REF-03` / `REF-04` record the likely owning seam in the tool repo.
+**Reference Check:** `REF-01` / `REF-02` matched the original failure shape and repro surface; `REF-03` / `REF-04` correctly identified the tool seam involved in the polling path; `REF-05` was the truthful consumer repro surface used for QA; `REF-06` was the correct lower-layer owner seam for the atomic preview publication fix and cadence-baseline work.
 
 **Commits:**
-- Pending
+- `e6b69ee` - Publish preview frames atomically
+- `b380fe0` - Preserve JPEG extension during atomic preview writes
+- `0c8dfe6` - Reduce default MediaPipe runtime cadence
+- `b290f00` - Rate-limit continuous camera tracking backend polling
+- `ea3b034` - Bound proving harness fixture timeline capture
 
-**Lessons Learned:** Treat this as a fresh workstream. Do not assume "memory leak" until the preview read/write error loop and its resource effects are separated and measured.
+**Lessons Learned:** The initial screenshot really was pointing at a true preview-file race, but that was only one layer of the overall churn story. Separating owner seams across vendor/tool/consumer was necessary: fixing preview correctness alone did not remove the long-run RSS growth, and the final blocker lived in the consumer proving harness’s unbounded debug retention rather than the preview code itself.
 
 ---
 
-*Drafted on 2026-06-06*
+*Completed on 2026-06-07*
