@@ -121,7 +121,7 @@ Requested upper bound for tracker/inference cadence. This maps to vendor runtime
 
 ### `tracking.state_update_max_fps`
 
-Requested upper bound for how often runtime state updates are emitted. This maps to vendor runtime `state_update_max_fps`. Preview writes cannot exceed this cadence even if `preview.*.max_fps` is set higher.
+Requested upper bound for how often runtime state/debug updates are emitted. This maps to vendor runtime `state_update_max_fps`. Preview publication now follows its own `preview.*.max_fps` caps instead of being forced down to the same cadence.
 
 ### `tracking.pose.enabled`
 
