@@ -25,7 +25,8 @@ func test_session_manifest_source_replays_saved_tracking_frames_without_vendor_b
 		"source_kind": "fixture_replay",
 		"artifacts": {
 			"pose_frames": "tracking/pose_frames.jsonl",
-			"source_info": "source/source_info.json"
+			"source_info": "source/source_info.json",
+			"timing_truth": "truth/timing_truth.yaml"
 		},
 		"tracking_contract": {
 			"backend_id": "mediapipe_python",
@@ -34,7 +35,13 @@ func test_session_manifest_source_replays_saved_tracking_frames_without_vendor_b
 			"timestamp_mode": "video_time_ms"
 		},
 		"source_contract": {
-			"source_path": "fixtures/boxing/demo.mp4"
+			"source_path": "fixtures/boxing/demo.mp4",
+			"fixture_id": "demo_fixture"
+		},
+		"truth_contract": {
+			"timing_truth_path": "truth/timing_truth.yaml",
+			"timing_truth_source_path": "fixtures/boxing/demo.yaml",
+			"label_context": "boxing_side_aware_punches_v1"
 		},
 		"replay_contract": {
 			"replay_mode": "saved_tracking_frames",
@@ -65,8 +72,8 @@ func test_session_manifest_source_replays_saved_tracking_frames_without_vendor_b
 			"frame_size": {"width": 960, "height": 540},
 			"landmarks": [{"id": "15", "x": 0.6, "y": 0.4, "z": -0.1, "v": 0.9}]
 		})
-	], "", {
-		"source_info": JSON.stringify({"source_kind": "fixture_replay"}) + "\n"
+	], "events:\n  - label: straight_left\n    start_ms: 0\n    end_ms: 66\n", {
+		"source_info": JSON.stringify({"source_kind": "fixture_replay", "timing_truth_linked": true}) + "\n"
 	})
 	assert_true(created.get("ok", false), "Fixture saved-session package should be created before replay tests")
 
@@ -82,9 +89,18 @@ func test_session_manifest_source_replays_saved_tracking_frames_without_vendor_b
 	assert_eq(tracker.get_tracking_frame().get("source_kind"), "fixture_replay")
 	assert_eq(tracker.get_tracking_frame().get("source_id"), "fixtures/boxing/demo.mp4")
 	assert_eq(int((tracker.get_tracking_frame().get("landmarks", []) as Array)[0].get("id", -1)), 15)
-	assert_eq(str(tracker.get_playback_status().get("replay_input_kind", "")), "session_manifest")
-	assert_eq(str(tracker.get_playback_status().get("replay_mode", "")), "saved_tracking_frames")
+	var playback_status := tracker.get_playback_status()
+	assert_eq(str(playback_status.get("replay_input_kind", "")), "session_manifest")
+	assert_eq(str(playback_status.get("replay_mode", "")), "saved_tracking_frames")
+	assert_eq(str(playback_status.get("source_kind", "")), "fixture_replay")
+	assert_eq(str(playback_status.get("source_id", "")), "fixtures/boxing/demo.mp4")
+	assert_true(bool(playback_status.get("truth_linked", false)), "Fixture replay playback status should surface linked timing truth metadata")
+	assert_eq(str((playback_status.get("truth_contract", {}) as Dictionary).get("timing_truth_path", "")), "truth/timing_truth.yaml")
+	assert_eq(str((playback_status.get("truth_contract", {}) as Dictionary).get("timing_truth_source_path", "")), "fixtures/boxing/demo.yaml")
+	assert_eq(str((playback_status.get("truth_contract", {}) as Dictionary).get("label_context", "")), "boxing_side_aware_punches_v1")
+	assert_eq(str((playback_status.get("source_contract", {}) as Dictionary).get("fixture_id", "")), "demo_fixture")
 	assert_eq(str(tracker.get_replay_transport_capabilities().get("transport_mode", "")), CameraTracking.TRANSPORT_MODE_EXACT_OWNED_FRAME_INDEX)
+	assert_true(bool(tracker.get_replay_transport_status().get("truth_linked", false)))
 	tracker.queue_free()
 
 func test_saved_session_replay_supports_play_pause_step_and_seek_deterministically() -> void:

@@ -111,6 +111,8 @@ func get_replay_transport_status() -> Dictionary:
 		"paused": _paused,
 		"position_sec": float(_tracking_frame.get("timestamp_seconds", 0.0)),
 		"duration_sec": _duration_sec(),
+		"source_kind": str(_manifest.get("source_kind", "")),
+		"truth_linked": _has_truth_linkage(),
 		"exactness_note": "Saved-session replay is served directly from manifest-declared pose frames.",
 		"limitation_code": "",
 	}
@@ -343,7 +345,16 @@ func _refresh_playback_status() -> void:
 		"frame_count": _frames.size(),
 		"can_seek": true,
 		"can_pause": true,
+		"source_kind": str(_manifest.get("source_kind", "")),
+		"source_id": _source_id,
+		"source_contract": (_manifest.get("source_contract", {}) if _manifest.get("source_contract", {}) is Dictionary else {}).duplicate(true),
+		"truth_linked": _has_truth_linkage(),
+		"truth_contract": (_manifest.get("truth_contract", {}) if _manifest.get("truth_contract", {}) is Dictionary else {}).duplicate(true),
 	}
+
+func _has_truth_linkage() -> bool:
+	var truth_contract: Dictionary = _manifest.get("truth_contract", {}) if _manifest.get("truth_contract", {}) is Dictionary else {}
+	return str(truth_contract.get("timing_truth_path", "")).strip_edges() != ""
 
 func _playback_failure(code: String, message: String, detail: Dictionary = {}) -> Dictionary:
 	return {
