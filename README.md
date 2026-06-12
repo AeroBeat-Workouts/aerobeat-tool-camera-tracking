@@ -81,6 +81,7 @@ godot --headless --path .testbed --script addons/aerobeat-vendor-godot-unit-test
 
 - `docs/tracker-config-schema.md` locks the v1 `aerobeat/camera_tracking_config` schema, profile defaults, and the parsing/validation boundary between this tracker repo and `aerobeat-input-camera-tracking`.
 - `docs/session-manifest-replay-parity-checklist.md` defines the Slice 4 A-mode vs B-mode comparison checklist for shared saved-session packages.
+- `docs/dual-mode-replay-validation-plan.md` defines the Slice 5 milestone-closure workflow, evidence bundle, and `c_complete_ready` machine-check path for the same saved-session family.
 
 ## Notes for later slices
 

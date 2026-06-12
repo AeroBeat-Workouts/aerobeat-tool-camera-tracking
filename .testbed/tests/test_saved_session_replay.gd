@@ -4,16 +4,20 @@ const CameraTracking = preload("res://addons/aerobeat-tool-camera-tracking/src/C
 const CameraTrackingBackend = preload("res://addons/aerobeat-tool-camera-tracking/src/CameraTrackingBackend.gd")
 const CameraRecordingManager = preload("res://addons/aerobeat-tool-camera-recording/src/CameraRecordingManager.gd")
 const PoseFrameRecord = preload("res://addons/aerobeat-tool-camera-recording/src/pose/PoseFrameRecord.gd")
+const SessionManifestDualModeValidation = preload("res://support/SessionManifestDualModeValidation.gd")
 
 const GENERATED_SESSION_ROOT := "user://saved_session_replay_fixture"
+const GENERATED_DUAL_MODE_SESSION_ROOT := "user://saved_session_dual_mode_validation_fixture"
 
 func before_each() -> void:
 	CameraTracking.clear_backend_factories()
 	_delete_recursive(ProjectSettings.globalize_path(GENERATED_SESSION_ROOT))
+	_delete_recursive(ProjectSettings.globalize_path(GENERATED_DUAL_MODE_SESSION_ROOT))
 
 func after_each() -> void:
 	CameraTracking.clear_backend_factories()
 	_delete_recursive(ProjectSettings.globalize_path(GENERATED_SESSION_ROOT))
+	_delete_recursive(ProjectSettings.globalize_path(GENERATED_DUAL_MODE_SESSION_ROOT))
 
 func test_session_manifest_source_replays_saved_tracking_frames_without_vendor_backend() -> void:
 	var session_root := ProjectSettings.globalize_path(GENERATED_SESSION_ROOT)
@@ -266,6 +270,30 @@ func test_saved_session_replay_supports_play_pause_step_and_seek_deterministical
 	assert_true(bool(tracker.get_playback_status().get("paused", false)))
 	assert_eq(int(tracker.get_replay_transport_status().get("frame_index", -1)), 2)
 	tracker.queue_free()
+
+func test_dual_mode_validation_report_proves_c_complete_same_family_round_trip() -> void:
+	var session_root := ProjectSettings.globalize_path(GENERATED_DUAL_MODE_SESSION_ROOT)
+	var report := SessionManifestDualModeValidation.run_validation(get_tree().root, {
+		"session_root": session_root,
+		"report_path": session_root.path_join("dual_mode_validation_report.json"),
+	})
+	assert_true(bool(report.get("ok", false)), "Dual-mode validation report should pass all C-complete checklist items")
+	assert_eq(str(((report.get("evidence_paths", {}) as Dictionary).get("session_root", ""))), session_root)
+	assert_eq(str((((report.get("b_mode", {}) as Dictionary).get("playback", {}) as Dictionary).get("manifest_path", ""))), str((((report.get("a_mode", {}) as Dictionary).get("playback", {}) as Dictionary).get("manifest_path", ""))))
+	var checklist: Dictionary = ((report.get("comparison", {}) as Dictionary).get("checklist", {}) as Dictionary)
+	assert_true(bool(checklist.get("recording_validator_passed_for_b_mode", false)))
+	assert_true(bool(checklist.get("recording_validator_passed_for_a_mode", false)))
+	assert_true(bool(checklist.get("same_manifest_entrypoint", false)))
+	assert_true(bool(checklist.get("same_saved_session_family", false)))
+	assert_true(bool(checklist.get("b_mode_exact_saved_frames", false)))
+	assert_true(bool(checklist.get("b_mode_controls_proved", false)))
+	assert_true(bool(checklist.get("a_mode_vendor_video_path", false)))
+	assert_true(bool(checklist.get("a_mode_exact_seek_not_claimed", false)))
+	assert_true(bool(checklist.get("truth_metadata_preserved", false)))
+	assert_true(bool(checklist.get("parity_landmark_id_match", false)))
+	assert_true(bool(checklist.get("parity_landmark_count_match", false)))
+	assert_true(bool(checklist.get("parity_first_landmark_x_within_0_15", false)))
+	assert_true(bool(((report.get("comparison", {}) as Dictionary).get("c_complete_ready", false))))
 
 func _delete_recursive(path: String) -> void:
 	if path == "" or not DirAccess.dir_exists_absolute(path):
