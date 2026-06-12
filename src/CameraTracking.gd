@@ -50,6 +50,8 @@ const CameraTrackingPreviewPresenter = preload("CameraTrackingPreviewPresenter.g
 const _MEDIAPIPE_PYTHON_BACKEND_ID := "mediapipe_python"
 const _MEDIAPIPE_PYTHON_BACKEND_SCRIPT_PATH := "res://addons/aerobeat-vendor-mediapipe-python/src/MediaPipePythonCameraTrackingBackend.gd"
 const _MEDIAPIPE_PYTHON_RUNTIME_BRIDGE_SCRIPT_PATH := "res://addons/aerobeat-vendor-mediapipe-python/src/MediaPipePythonRuntimeBridge.gd"
+const _SESSION_MANIFEST_REPLAY_BACKEND_ID := "session_manifest_replay"
+const _SESSION_MANIFEST_REPLAY_BACKEND_SCRIPT_PATH := "res://addons/aerobeat-tool-camera-tracking/src/SessionManifestReplayBackend.gd"
 const _SAVED_SESSION_REPLAY_BACKEND_ID := "saved_session_replay"
 const _SAVED_SESSION_REPLAY_BACKEND_SCRIPT_PATH := "res://addons/aerobeat-tool-camera-tracking/src/SavedSessionReplayBackend.gd"
 const _CONTINUOUS_BACKEND_REFRESH_INTERVAL_MS := 33
@@ -304,7 +306,7 @@ func _ensure_backend_for_config(config: Dictionary) -> bool:
 	var requested_backend_id := CameraTrackingConfig.normalize_requested_backend(config.get("backend", CameraTrackingConfig.DEFAULT_BACKEND))
 	var source: Dictionary = config.get("source", {}) if config.get("source", {}) is Dictionary else {}
 	var source_kind := str(source.get("kind", CameraTrackingConfig.DEFAULT_SOURCE_KIND)).strip_edges().to_lower()
-	var resolved_backend_id := _SAVED_SESSION_REPLAY_BACKEND_ID if source_kind == "session_manifest" and requested_backend_id == CameraTrackingConfig.DEFAULT_BACKEND else CameraTrackingConfig.resolve_backend_id(requested_backend_id)
+	var resolved_backend_id := _SESSION_MANIFEST_REPLAY_BACKEND_ID if source_kind == "session_manifest" and requested_backend_id == CameraTrackingConfig.DEFAULT_BACKEND else CameraTrackingConfig.resolve_backend_id(requested_backend_id)
 	if _backend != null:
 		if _backend_resolution_mode == _BACKEND_RESOLUTION_MANUAL:
 			_requested_backend_id = requested_backend_id
@@ -365,6 +367,8 @@ func _try_auto_register_backend_factory(resolved_backend_id: String) -> void:
 	match resolved_backend_id:
 		_MEDIAPIPE_PYTHON_BACKEND_ID:
 			_register_mediapipe_python_backend_factory()
+		_SESSION_MANIFEST_REPLAY_BACKEND_ID:
+			_register_session_manifest_replay_backend_factory()
 		_SAVED_SESSION_REPLAY_BACKEND_ID:
 			_register_saved_session_replay_backend_factory()
 
@@ -378,6 +382,17 @@ func _register_mediapipe_python_backend_factory() -> void:
 	CameraTrackingBackendRegistry.register_factory(
 		_MEDIAPIPE_PYTHON_BACKEND_ID,
 		Callable(_mediapipe_python_backend_factory, "create")
+	)
+
+func _register_session_manifest_replay_backend_factory() -> void:
+	if CameraTrackingBackendRegistry.has_factory(_SESSION_MANIFEST_REPLAY_BACKEND_ID):
+		return
+	var backend_script: Variant = load(_SESSION_MANIFEST_REPLAY_BACKEND_SCRIPT_PATH)
+	if backend_script == null:
+		return
+	CameraTrackingBackendRegistry.register_factory(_SESSION_MANIFEST_REPLAY_BACKEND_ID, func(_config: Dictionary):
+		var backend_candidate: Variant = backend_script.new()
+		return backend_candidate if backend_candidate is CameraTrackingBackend else null
 	)
 
 func _register_saved_session_replay_backend_factory() -> void:

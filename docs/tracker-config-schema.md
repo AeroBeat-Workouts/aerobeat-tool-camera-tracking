@@ -106,7 +106,12 @@ The tracker service currently accepts three runtime source kinds through its pub
 - `video_file`
 - `session_manifest`
 
-`session_manifest` is the first-class B-mode replay source for Slice 2. It consumes a saved-session package entrypoint (`session_manifest.json`) and replays manifest-declared `saved_tracking_frames` directly from saved artifacts rather than re-running vendor inference.
+`session_manifest` is the first-class saved-session replay source. It consumes a saved-session package entrypoint (`session_manifest.json`) and dispatches from `replay_contract.replay_mode`:
+
+- `saved_tracking_frames` → deterministic B-mode replay from saved artifacts
+- `video_reinference` → A-mode replay through the packaged source video and the mounted vendor/video tracking lane
+
+The public entry stays the same either way; only the manifest-declared replay branch changes.
 
 ### `source.live_camera.requested_width|requested_height|requested_fps`
 

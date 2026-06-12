@@ -103,6 +103,98 @@ func test_session_manifest_source_replays_saved_tracking_frames_without_vendor_b
 	assert_true(bool(tracker.get_replay_transport_status().get("truth_linked", false)))
 	tracker.queue_free()
 
+func test_session_manifest_source_dispatches_video_reinference_through_mediapipe_video_path() -> void:
+	var session_root := ProjectSettings.globalize_path(GENERATED_SESSION_ROOT)
+	assert_eq(DirAccess.make_dir_recursive_absolute(session_root.path_join("source")), OK)
+	var source_video_path := session_root.path_join("source/source_video.mp4")
+	var source_video_file := FileAccess.open(source_video_path, FileAccess.WRITE)
+	assert_true(source_video_file != null, "Expected source video artifact to open for fixture write")
+	source_video_file.store_buffer(PackedByteArray([0x66, 0x61, 0x6b, 0x65]))
+	source_video_file.close()
+	var created := CameraRecordingManager.create_saved_session_package(session_root, {
+		"schema_version": 1,
+		"session_id": "saved_session_video_reinference",
+		"take_id": "take_01",
+		"created_at": "2026-06-12T23:15:00Z",
+		"source_kind": "video_file",
+		"artifacts": {
+			"pose_frames": "tracking/pose_frames.jsonl",
+			"source_video": "source/source_video.mp4",
+			"timing_truth": "truth/timing_truth.yaml"
+		},
+		"tracking_contract": {
+			"backend_id": "mediapipe_python",
+			"normalized_schema_version": PoseFrameRecord.SCHEMA_VERSION,
+			"frame_count": 3,
+			"timestamp_mode": "video_time_ms"
+		},
+		"source_contract": {
+			"source_path": "fixtures/boxing/demo.mp4"
+		},
+		"truth_contract": {
+			"timing_truth_path": "truth/timing_truth.yaml",
+			"label_context": "boxing_side_aware_punches_v1"
+		},
+		"replay_contract": {
+			"replay_mode": "video_reinference",
+			"entrypoint": "source/source_video.mp4"
+		}
+	}, [
+		PoseFrameRecord.normalize({"frame_index": 0, "timestamp_ms": 0, "timestamp_seconds": 0.0, "tracking_state": "tracked", "landmarks": [{"id": "0", "x": 0.1, "y": 0.2, "z": 0.0, "v": 0.9}]}),
+		PoseFrameRecord.normalize({"frame_index": 1, "timestamp_ms": 50, "timestamp_seconds": 0.05, "tracking_state": "tracked", "landmarks": [{"id": "0", "x": 0.5, "y": 0.2, "z": 0.0, "v": 0.9}]}),
+		PoseFrameRecord.normalize({"frame_index": 2, "timestamp_ms": 100, "timestamp_seconds": 0.1, "tracking_state": "tracked", "landmarks": [{"id": "0", "x": 0.9, "y": 0.2, "z": 0.0, "v": 0.9}]})
+	], "events:\n  - label: straight_left\n    start_ms: 0\n    end_ms: 100\n")
+	assert_true(created.get("ok", false))
+
+	var tracker := CameraTracking.new()
+	get_tree().root.add_child(tracker)
+	tracker.start({
+		"source": {"kind": "session_manifest", "path": session_root.path_join("session_manifest.json")},
+		"preview": {"replay": {"enabled": false}},
+		"runtime": {
+			"environment": {
+				"AEROBEAT_CAMERA_SAMPLE_FIXTURES_JSON": JSON.stringify({
+					source_video_path: {
+						"sequence": [
+							{
+								"width": 960,
+								"height": 540,
+								"timestamp_ms": 111,
+								"landmarks": [
+									{"id": 15, "x": 0.21, "y": 0.31, "z": -0.1, "visibility": 0.95}
+								]
+							},
+							{
+								"width": 960,
+								"height": 540,
+								"timestamp_ms": 222,
+								"landmarks": [
+									{"id": 15, "x": 0.44, "y": 0.34, "z": -0.08, "visibility": 0.95}
+								]
+							}
+						]
+					}
+				}),
+				"AEROBEAT_CAMERA_REPLAY_FRAME_DELAY_MS": "10"
+			}
+		}
+	})
+
+	assert_eq(tracker.get_state().get("state"), CameraTracking.STATE_RUNNING)
+	var frame := tracker.get_tracking_frame()
+	assert_eq(str(frame.get("backend", "")), "mediapipe_python")
+	var playback_status := tracker.get_playback_status()
+	assert_eq(str(playback_status.get("source", "")), session_root.path_join("session_manifest.json"))
+	assert_eq(str(playback_status.get("replay_input_kind", "")), "session_manifest")
+	assert_eq(str(playback_status.get("replay_mode", "")), "video_reinference")
+	assert_eq(str(playback_status.get("entrypoint", "")), source_video_path)
+	assert_eq(str(playback_status.get("source_video_path", "")), source_video_path)
+	assert_eq(str(playback_status.get("delegate_backend", "")), "mediapipe_python")
+	assert_eq(str(tracker.get_replay_transport_capabilities().get("transport_mode", "")), CameraTracking.TRANSPORT_MODE_APPROX_TIME_SEEK)
+	assert_false(bool(tracker.get_replay_transport_capabilities().get("can_seek_frame", true)))
+	assert_true(bool(playback_status.get("truth_linked", false)))
+	tracker.queue_free()
+
 func test_saved_session_replay_supports_play_pause_step_and_seek_deterministically() -> void:
 	var session_root := ProjectSettings.globalize_path(GENERATED_SESSION_ROOT)
 	var created := CameraRecordingManager.create_saved_session_package(session_root, {
