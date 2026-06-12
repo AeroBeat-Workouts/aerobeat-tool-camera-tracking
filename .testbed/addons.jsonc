@@ -25,6 +25,11 @@
       "url": "../../aerobeat-vendor-godot-unit-test",
       "subfolder": "/",
       "source": "symlink"
+    },
+    "aerobeat-tool-camera-recording": {
+      "url": "../../aerobeat-tool-camera-recording",
+      "subfolder": "/",
+      "source": "symlink"
     }
   }
 }

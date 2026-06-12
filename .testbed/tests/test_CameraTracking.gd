@@ -173,6 +173,8 @@ class PlaybackStatusFakeBackend extends CameraTrackingFakeBackend:
 		emit_tracking_frame(tracking_frame)
 
 class ReplayTransportFakeBackend extends PlaybackStatusFakeBackend:
+	var play_requests := 0
+	var pause_requests := 0
 	var replay_transport_capabilities := {
 		"transport_mode": CameraTracking.TRANSPORT_MODE_EXACT_OWNED_FRAME_INDEX,
 		"can_step_forward": true,
@@ -206,6 +208,24 @@ class ReplayTransportFakeBackend extends PlaybackStatusFakeBackend:
 
 	func get_replay_transport_status() -> Dictionary:
 		return replay_transport_status.duplicate(true)
+
+	func play_replay() -> Dictionary:
+		play_requests += 1
+		replay_transport_status["paused"] = false
+		playback_status["paused"] = false
+		playback_status["state"] = "playing"
+		return {
+			CameraTrackingBackend.RESULT_SUCCESS: true,
+		}
+
+	func pause_replay() -> Dictionary:
+		pause_requests += 1
+		replay_transport_status["paused"] = true
+		playback_status["paused"] = true
+		playback_status["state"] = "paused"
+		return {
+			CameraTrackingBackend.RESULT_SUCCESS: true,
+		}
 
 	func step_replay_frames(delta_frames: int) -> Dictionary:
 		step_frame_requests.append(delta_frames)

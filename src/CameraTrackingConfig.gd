@@ -327,7 +327,7 @@ static func _normalize_preview_overlays_config(value: Variant) -> Dictionary:
 
 static func _resolve_active_preview_mode_config(source: Dictionary, preview: Dictionary) -> Dictionary:
 	var source_kind := str(source.get("kind", DEFAULT_SOURCE_KIND)).strip_edges().to_lower()
-	var key := "replay" if source_kind == "video_file" else "live"
+	var key := "replay" if source_kind == "video_file" or source_kind == "session_manifest" else "live"
 	var resolved: Variant = preview.get(key, {})
 	return resolved.duplicate(true) if resolved is Dictionary else {}
 

@@ -93,6 +93,12 @@ func get_replay_transport_status() -> Dictionary:
 		"limitation_code": str(capabilities.get("limitation_code", REPLAY_TRANSPORT_INACTIVE_CODE)),
 	}
 
+func play_replay() -> Dictionary:
+	return _transport_unsupported("play_replay")
+
+func pause_replay() -> Dictionary:
+	return _transport_unsupported("pause_replay")
+
 func step_replay_frames(_delta_frames: int) -> Dictionary:
 	return _transport_unsupported("step_replay_frames")
 

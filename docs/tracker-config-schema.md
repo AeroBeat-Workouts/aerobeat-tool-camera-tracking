@@ -99,6 +99,15 @@ tracking:
 
 ## Field semantics
 
+### `source.kind`
+
+The tracker service currently accepts three runtime source kinds through its public config surface:
+- `live_camera`
+- `video_file`
+- `session_manifest`
+
+`session_manifest` is the first-class B-mode replay source for Slice 2. It consumes a saved-session package entrypoint (`session_manifest.json`) and replays manifest-declared `saved_tracking_frames` directly from saved artifacts rather than re-running vendor inference.
+
 ### `source.live_camera.requested_width|requested_height|requested_fps`
 
 These are the tracker-owned public live camera request knobs. They resolve to vendor runtime `live_camera_width`, `live_camera_height`, and `live_camera_fps` only for live-camera sessions. They do not pretend to affect replay decode.
