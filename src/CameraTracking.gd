@@ -196,6 +196,9 @@ func get_playback_status() -> Dictionary:
 		_refresh_from_backend_if_running(false)
 	return _playback_status.duplicate(true)
 
+func get_playback_status_snapshot() -> Dictionary:
+	return _playback_status.duplicate(true)
+
 func get_replay_transport_capabilities() -> Dictionary:
 	if _backend == null:
 		return _replay_transport_capabilities.duplicate(true)
@@ -203,11 +206,17 @@ func get_replay_transport_capabilities() -> Dictionary:
 		_refresh_from_backend_if_running(false)
 	return _replay_transport_capabilities.duplicate(true)
 
+func get_replay_transport_capabilities_snapshot() -> Dictionary:
+	return _replay_transport_capabilities.duplicate(true)
+
 func get_replay_transport_status() -> Dictionary:
 	if _backend == null:
 		return _replay_transport_status.duplicate(true)
 	if _state == STATE_RUNNING:
 		_refresh_from_backend_if_running(false)
+	return _replay_transport_status.duplicate(true)
+
+func get_replay_transport_status_snapshot() -> Dictionary:
 	return _replay_transport_status.duplicate(true)
 
 func play_replay() -> Dictionary:

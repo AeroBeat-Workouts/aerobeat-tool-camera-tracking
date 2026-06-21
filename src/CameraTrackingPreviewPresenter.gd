@@ -140,6 +140,8 @@ func get_tracking_frame_snapshot() -> Dictionary:
 func get_playback_status_snapshot() -> Dictionary:
 	if _tracking_session == null or not is_instance_valid(_tracking_session):
 		return {}
+	if _tracking_session.has_method("get_playback_status_snapshot"):
+		return _tracking_session.get_playback_status_snapshot().duplicate(true)
 	if _tracking_session.has_method("get_playback_status"):
 		return _tracking_session.get_playback_status().duplicate(true)
 	return {}
@@ -147,6 +149,8 @@ func get_playback_status_snapshot() -> Dictionary:
 func get_replay_transport_capabilities_snapshot() -> Dictionary:
 	if _tracking_session == null or not is_instance_valid(_tracking_session):
 		return {}
+	if _tracking_session.has_method("get_replay_transport_capabilities_snapshot"):
+		return _tracking_session.get_replay_transport_capabilities_snapshot().duplicate(true)
 	if _tracking_session.has_method("get_replay_transport_capabilities"):
 		return _tracking_session.get_replay_transport_capabilities().duplicate(true)
 	return {}
@@ -154,6 +158,8 @@ func get_replay_transport_capabilities_snapshot() -> Dictionary:
 func get_replay_transport_status_snapshot() -> Dictionary:
 	if _tracking_session == null or not is_instance_valid(_tracking_session):
 		return {}
+	if _tracking_session.has_method("get_replay_transport_status_snapshot"):
+		return _tracking_session.get_replay_transport_status_snapshot().duplicate(true)
 	if _tracking_session.has_method("get_replay_transport_status"):
 		return _tracking_session.get_replay_transport_status().duplicate(true)
 	return {}

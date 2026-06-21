@@ -143,6 +143,11 @@ class CameraOptionsFakeBackend extends CameraTrackingFakeBackend:
 		return snapshot
 
 class PlaybackStatusFakeBackend extends CameraTrackingFakeBackend:
+	var get_tracking_frame_calls := 0
+	var get_playback_status_calls := 0
+	var get_replay_transport_capabilities_calls := 0
+	var get_replay_transport_status_calls := 0
+
 	func start(config: Dictionary) -> void:
 		playback_status = {
 			"source": str(config.get("source", {}).get("path", "res://clips/demo.mp4")),
@@ -154,6 +159,28 @@ class PlaybackStatusFakeBackend extends CameraTrackingFakeBackend:
 			"is_file_source": true,
 		}
 		super.start(config)
+
+	func get_tracking_frame() -> Dictionary:
+		get_tracking_frame_calls += 1
+		return super.get_tracking_frame()
+
+	func get_playback_status() -> Dictionary:
+		get_playback_status_calls += 1
+		return super.get_playback_status()
+
+	func get_replay_transport_capabilities() -> Dictionary:
+		get_replay_transport_capabilities_calls += 1
+		return super.get_replay_transport_capabilities()
+
+	func get_replay_transport_status() -> Dictionary:
+		get_replay_transport_status_calls += 1
+		return super.get_replay_transport_status()
+
+	func reset_runtime_snapshot_call_counts() -> void:
+		get_tracking_frame_calls = 0
+		get_playback_status_calls = 0
+		get_replay_transport_capabilities_calls = 0
+		get_replay_transport_status_calls = 0
 
 	func advance_playback(current_time_sec: float, duration_sec: float) -> void:
 		var safe_duration := maxf(duration_sec, 0.0)
@@ -1438,6 +1465,58 @@ func test_preview_presenter_exposes_playback_status_alongside_hand_debug_snapsho
 	backend.advance_playback(9.0, 12.0)
 	await get_tree().process_frame
 	assert_eq(presenter.get_playback_status_snapshot().get("progress"), 0.75)
+
+	tracker.stop()
+	parent.queue_free()
+	await get_tree().process_frame
+	tracker.free()
+
+func test_preview_presenter_snapshot_reads_do_not_force_runtime_refresh() -> void:
+	var tracker := CameraTracking.new()
+	var backend := PlaybackStatusFakeBackend.new()
+	var parent := Control.new()
+	parent.name = "PresenterParent"
+	parent.size = Vector2(200, 200)
+	get_tree().root.add_child(parent)
+
+	var presenter := tracker.mount_preview_presenter(parent, {"fit_mode": "contain"})
+	tracker.set_backend(backend, "fake")
+	tracker.start({
+		"backend": "fake",
+		"source": {"kind": "video_file", "path": "res://clips/demo.mp4"},
+		"preview": {"flip_horizontal": false},
+		"tracking": {
+			"hands": {
+				"enabled": true
+			}
+		}
+	})
+	backend.emit_tracking_frame({
+		"timestamp_ms": 404,
+		"backend": "fake",
+		"source_kind": "video_file",
+		"source_id": "res://clips/demo.mp4",
+		"tracking_state": "tracked",
+		"frame_size": {"x": 400, "y": 200},
+		"vendor_hand_tracking": {
+			"available": false
+		},
+		"hands": []
+	})
+	await get_tree().process_frame
+	backend.reset_runtime_snapshot_call_counts()
+
+	var playback_snapshot := presenter.get_playback_status_snapshot()
+	var transport_snapshot := presenter.get_replay_transport_status_snapshot()
+	var hand_snapshot := presenter.get_hand_debug_snapshot()
+
+	assert_eq(playback_snapshot.get("current_time_sec"), 3.0)
+	assert_eq(String(transport_snapshot.get("transport_mode", "")), CameraTracking.TRANSPORT_MODE_APPROX_TIME_SEEK)
+	assert_eq(hand_snapshot.get("playback", {}).get("progress"), 0.25)
+	assert_eq(backend.get_tracking_frame_calls, 0, "Presenter snapshot reads should stay on cached session snapshots and must not poll the backend for a fresh tracking frame.")
+	assert_eq(backend.get_playback_status_calls, 0, "Presenter snapshot reads should avoid runtime-refresh playback reads during debug repaint paths.")
+	assert_eq(backend.get_replay_transport_capabilities_calls, 0, "Presenter snapshot reads should not force replay transport capability refreshes.")
+	assert_eq(backend.get_replay_transport_status_calls, 0, "Presenter snapshot reads should not force replay transport status refreshes.")
 
 	tracker.stop()
 	parent.queue_free()
